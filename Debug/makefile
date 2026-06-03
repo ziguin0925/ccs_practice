@@ -61,6 +61,7 @@ ORDERED_OBJS += \
 "./DSP_SOURCE/f28004x_sysctrl.obj" \
 "./DSP_SOURCE/f28004x_usdelay.obj" \
 "./easyDSP/easy28x_bitfield_v11.2.obj" \
+"./src/handler/epwm.obj" \
 "../280049_FLASH_lnk.cmd" \
 "../f28004x_headers_nonbios.cmd" \
 $(GEN_CMDS__FLAG) \
@@ -78,11 +79,13 @@ RMDIR := RMDIR /S/Q
 -include DSP_SOURCE/subdir_vars.mk
 -include EZD/subdir_vars.mk
 -include easyDSP/subdir_vars.mk
+-include src/handler/subdir_vars.mk
 -include subdir_rules.mk
 -include DSP_HEADER/Driverlib/subdir_rules.mk
 -include DSP_SOURCE/subdir_rules.mk
 -include EZD/subdir_rules.mk
 -include easyDSP/subdir_rules.mk
+-include src/handler/subdir_rules.mk
 -include objects.mk
 
 ifneq ($(MAKECMDGOALS),clean)
@@ -201,9 +204,9 @@ all: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
 clean:
 	-$(RM) $(EXE_OUTPUTS__QUOTED)
 	-$(RM) "main.obj" "DSP_HEADER\Driverlib\adc.obj" "DSP_HEADER\Driverlib\asysctl.obj" "DSP_HEADER\Driverlib\can.obj" "DSP_HEADER\Driverlib\cla.obj" "DSP_HEADER\Driverlib\clapromcrc.obj" "DSP_HEADER\Driverlib\clb.obj" "DSP_HEADER\Driverlib\cmpss.obj" "DSP_HEADER\Driverlib\cputimer.obj" "DSP_HEADER\Driverlib\dac.obj" "DSP_HEADER\Driverlib\dcc.obj" "DSP_HEADER\Driverlib\dcsm.obj" "DSP_HEADER\Driverlib\dma.obj" "DSP_HEADER\Driverlib\ecap.obj" "DSP_HEADER\Driverlib\epwm.obj" "DSP_HEADER\Driverlib\eqep.obj" "DSP_HEADER\Driverlib\erad.obj" "DSP_HEADER\Driverlib\flash.obj" "DSP_HEADER\Driverlib\fsi.obj" "DSP_HEADER\Driverlib\gpio.obj" "DSP_HEADER\Driverlib\hrcap.obj" "DSP_HEADER\Driverlib\hrpwm.obj" "DSP_HEADER\Driverlib\i2c.obj" "DSP_HEADER\Driverlib\interrupt.obj" "DSP_HEADER\Driverlib\lin.obj" "DSP_HEADER\Driverlib\memcfg.obj" "DSP_HEADER\Driverlib\pga.obj" "DSP_HEADER\Driverlib\pmbus.obj" "DSP_HEADER\Driverlib\sci.obj" "DSP_HEADER\Driverlib\sdfm.obj" "DSP_HEADER\Driverlib\spi.obj" "DSP_HEADER\Driverlib\sysctl.obj" 
-	-$(RM) "DSP_HEADER\Driverlib\version.obj" "DSP_HEADER\Driverlib\xbar.obj" "DSP_SOURCE\device.obj" "DSP_SOURCE\f28004x_adc.obj" "DSP_SOURCE\f28004x_codestartbranch.obj" "DSP_SOURCE\f28004x_cputimers.obj" "DSP_SOURCE\f28004x_dbgier.obj" "DSP_SOURCE\f28004x_dcsm_z1otp.obj" "DSP_SOURCE\f28004x_dcsm_z2otp.obj" "DSP_SOURCE\f28004x_defaultisr.obj" "DSP_SOURCE\f28004x_dma.obj" "DSP_SOURCE\f28004x_globalvariabledefs.obj" "DSP_SOURCE\f28004x_gpio.obj" "DSP_SOURCE\f28004x_piectrl.obj" "DSP_SOURCE\f28004x_pievect.obj" "DSP_SOURCE\f28004x_spi.obj" "DSP_SOURCE\f28004x_sysctrl.obj" "DSP_SOURCE\f28004x_usdelay.obj" "easyDSP\easy28x_bitfield_v11.2.obj" 
+	-$(RM) "DSP_HEADER\Driverlib\version.obj" "DSP_HEADER\Driverlib\xbar.obj" "DSP_SOURCE\device.obj" "DSP_SOURCE\f28004x_adc.obj" "DSP_SOURCE\f28004x_codestartbranch.obj" "DSP_SOURCE\f28004x_cputimers.obj" "DSP_SOURCE\f28004x_dbgier.obj" "DSP_SOURCE\f28004x_dcsm_z1otp.obj" "DSP_SOURCE\f28004x_dcsm_z2otp.obj" "DSP_SOURCE\f28004x_defaultisr.obj" "DSP_SOURCE\f28004x_dma.obj" "DSP_SOURCE\f28004x_globalvariabledefs.obj" "DSP_SOURCE\f28004x_gpio.obj" "DSP_SOURCE\f28004x_piectrl.obj" "DSP_SOURCE\f28004x_pievect.obj" "DSP_SOURCE\f28004x_spi.obj" "DSP_SOURCE\f28004x_sysctrl.obj" "DSP_SOURCE\f28004x_usdelay.obj" "easyDSP\easy28x_bitfield_v11.2.obj" "src\handler\epwm.obj" 
 	-$(RM) "main.d" "DSP_HEADER\Driverlib\adc.d" "DSP_HEADER\Driverlib\asysctl.d" "DSP_HEADER\Driverlib\can.d" "DSP_HEADER\Driverlib\cla.d" "DSP_HEADER\Driverlib\clapromcrc.d" "DSP_HEADER\Driverlib\clb.d" "DSP_HEADER\Driverlib\cmpss.d" "DSP_HEADER\Driverlib\cputimer.d" "DSP_HEADER\Driverlib\dac.d" "DSP_HEADER\Driverlib\dcc.d" "DSP_HEADER\Driverlib\dcsm.d" "DSP_HEADER\Driverlib\dma.d" "DSP_HEADER\Driverlib\ecap.d" "DSP_HEADER\Driverlib\epwm.d" "DSP_HEADER\Driverlib\eqep.d" "DSP_HEADER\Driverlib\erad.d" "DSP_HEADER\Driverlib\flash.d" "DSP_HEADER\Driverlib\fsi.d" "DSP_HEADER\Driverlib\gpio.d" "DSP_HEADER\Driverlib\hrcap.d" "DSP_HEADER\Driverlib\hrpwm.d" "DSP_HEADER\Driverlib\i2c.d" "DSP_HEADER\Driverlib\interrupt.d" "DSP_HEADER\Driverlib\lin.d" "DSP_HEADER\Driverlib\memcfg.d" "DSP_HEADER\Driverlib\pga.d" "DSP_HEADER\Driverlib\pmbus.d" "DSP_HEADER\Driverlib\sci.d" "DSP_HEADER\Driverlib\sdfm.d" "DSP_HEADER\Driverlib\spi.d" "DSP_HEADER\Driverlib\sysctl.d" "DSP_HEADER\Driverlib\version.d" "DSP_HEADER\Driverlib\xbar.d" 
-	-$(RM) "DSP_SOURCE\device.d" "DSP_SOURCE\f28004x_adc.d" "DSP_SOURCE\f28004x_cputimers.d" "DSP_SOURCE\f28004x_defaultisr.d" "DSP_SOURCE\f28004x_dma.d" "DSP_SOURCE\f28004x_globalvariabledefs.d" "DSP_SOURCE\f28004x_gpio.d" "DSP_SOURCE\f28004x_piectrl.d" "DSP_SOURCE\f28004x_pievect.d" "DSP_SOURCE\f28004x_spi.d" "DSP_SOURCE\f28004x_sysctrl.d" "easyDSP\easy28x_bitfield_v11.2.d" 
+	-$(RM) "DSP_SOURCE\device.d" "DSP_SOURCE\f28004x_adc.d" "DSP_SOURCE\f28004x_cputimers.d" "DSP_SOURCE\f28004x_defaultisr.d" "DSP_SOURCE\f28004x_dma.d" "DSP_SOURCE\f28004x_globalvariabledefs.d" "DSP_SOURCE\f28004x_gpio.d" "DSP_SOURCE\f28004x_piectrl.d" "DSP_SOURCE\f28004x_pievect.d" "DSP_SOURCE\f28004x_spi.d" "DSP_SOURCE\f28004x_sysctrl.d" "easyDSP\easy28x_bitfield_v11.2.d" "src\handler\epwm.d" 
 	-$(RM) "DSP_SOURCE\f28004x_codestartbranch.d" "DSP_SOURCE\f28004x_dbgier.d" "DSP_SOURCE\f28004x_dcsm_z1otp.d" "DSP_SOURCE\f28004x_dcsm_z2otp.d" "DSP_SOURCE\f28004x_usdelay.d" 
 	-@echo 'Finished clean'
 	-@echo ' '

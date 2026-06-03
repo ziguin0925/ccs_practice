@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}",
+                "${workspaceFolder}/DSP_HEADER/Common",
+                "${workspaceFolder}/DSP_HEADER/Driverlib",
+                "${workspaceFolder}/DSP_HEADER/Driverlib/inc",
+                "${workspaceFolder}/DSP_HEADER/Header",
+                "${workspaceFolder}/easyDSP",
+                "C:/ti/ccs1220/ccs/tools/compiler/ti-cgt-c2000_22.6.0.LTS/include"
+            ],
+            "defines": [
+                "_FLASH",
+                "CPU1"
+            ],
+            "compilerPath": "",
+            "cStandard": "c99",
+            "cppStandard": "c++11",
+            "intelliSenseMode": "windows-gcc-x64"
+        }
+    ],
+    "version": 4
+}

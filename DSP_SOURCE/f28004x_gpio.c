@@ -63,10 +63,10 @@ InitGpio()
     Uint16 regOffset;
 
     //
-    // Disable pin locks
+    // GPIO 잠금 해제
     //
     EALLOW;
-    GpioCtrlRegs.GPALOCK.all = 0x00000000;
+    GpioCtrlRegs.GPALOCK.all = 0x00000000; 
     GpioCtrlRegs.GPBLOCK.all = 0x00000000;
     GpioCtrlRegs.GPHLOCK.all = 0x00000000;
 
@@ -75,6 +75,7 @@ InitGpio()
     // for three GPIO modules would make this function *very* long.
     // Fortunately, we'd be writing them all with zeros anyway,
     // so this saves a lot of space.
+    // sizeof() 하면 word 단위로 나오므로 멤버마다 돌리기 위해 /2 해줌
     //
     gpioBaseAddr = (Uint32 *)&GpioCtrlRegs;
     for (regOffset = 0; regOffset < sizeof(GpioCtrlRegs)/2; regOffset++)

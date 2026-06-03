@@ -87,21 +87,24 @@ void
 InitSysCtrl(void)
 {
     //
+    // 시스템 초기화중 워치독 리셋이 걸리는 것을 방지
     // Disable the watchdog
     //
     DisableDog();
 
-#ifdef _FLASH
+#ifdef _FLASH // css에서 predefied symbols 되어있음
     //
     // Copy time critical code and Flash setup code to RAM
     // This includes the following functions:  InitFlash();
     // The  RamfuncsLoadStart, RamfuncsLoadSize, and RamfuncsRunStart
     // symbols are created by the linker. Refer to the device .cmd file.
     //
-    memcpy(&RamfuncsRunStart, &RamfuncsLoadStart, (size_t)&RamfuncsLoadSize);
+
+    // Flash에 저장된 함수 코드를 RAM으로 복사하는 작업
+    memcpy(&RamfuncsRunStart, &RamfuncsLoadStart, (size_t)&RamfuncsLoadSize); 
 
     //
-    // Call Flash Initialization to setup flash waitstates
+    // 플래시 대기 상태(wait states) 및 캐시/프리패치 설정 등 플래시 컨트롤 레지스터를 초기화
     // This function must reside in RAM
     //
     InitFlash();
@@ -109,11 +112,20 @@ InitSysCtrl(void)
 
     //
     // PLLSYSCLK = (XTAL_OSC) * (IMULT + FMULT) / (PLLSYSCLKDIV)
+    // 외부 크리스탈(XTAL) 기반 PLL을 설정하여 시스템 클럭을 구성
+    // DEVICE_OSCSRC_FREQ  외부 크리스탈 주파수 
+    // DEVICE_SYSCLK_FREQ 변수 확인
+    // DEVICE_LSPCLK_FREQ - Low-Speed Peripheral Clock(UART, SPI, SCI 등의 주변장치 클록) 주파수
+    // SysCtl_setClock() 실제 clock 설정 함수
+    // SysCtl_getClock()로 확인 현재 100MHz
     //
-    InitSysPll(XTAL_OSC,IMULT_10,FMULT_0,PLLCLK_BY_2);
+    InitSysPll(XTAL_OSC,IMULT_10,FMULT_0,PLLCLK_BY_2); // 1, 10, 0, 1
 
 #ifndef _FLASH
     //
+    // CCS가 RAM에 다운로드해서 디버깅하는 코드
+    // 디바이스 캘리브레이션 값을 부트 코드 대신 여기서 다시 로드
+    // 디버그 환경에서 리셋 시 부트 코드가 실행되지 않을 경우를 대비
     // Call Device_cal function when run using debugger
     // This function is called as part of the Boot code. The function is called
     // in the InitSysCtrl function since during debug time resets, the boot code
@@ -124,7 +136,7 @@ InitSysCtrl(void)
 #endif
 
     //
-    // Turn on all peripherals
+    // 각종 주변장치(EPWM, eCAP, EQEP, SPI, I2C, CAN, ADC, CMPSS, DAC, DCC 등)에 대한 클럭을 활성화
     //
     InitPeripheralClocks();
 }
@@ -368,12 +380,12 @@ void
 DisableDog(void)
 {
     volatile Uint16 temp;
-    EALLOW; // EALLOW : protected register write ���
+    EALLOW; // EALLOW : protected register write ���
 
     //
     // Grab the clock config so we don't clobber it
     // WDCR = Watchdog Control Register
-    // INTOSC1 = ���ο� �����ϴ� ���Ƿ����� 10MHz
+    // INTOSC1 = 내부에 존재하는 오실레이터 10MHz
     //
     temp = WdRegs.WDCR.all & 0x0007;
     WdRegs.WDCR.all = 0x0068 | temp;
@@ -384,18 +396,18 @@ DisableDog(void)
     // (5 - 3)    101 (WDCHK)       : Watchdog Check Bits
     // (2 - 0)    111 (WDPS)        : WDCLK = PREDIVCLK / 111
 
-    EDIS; // EDIS : �ٽ� ��ȣ Ȱ��ȭ
+    EDIS; //  EDIS : 다시 보호 활성화
 }
 
 //
-// InitPll - This function initializes the PLL registers.
+// InitPll - This function initializes the PLL registers.(Phase Locked Loop)
 //
 // Note: This function uses the DCC to check that the PLLRAWCLK is running at
 // the expected rate. If you are using the DCC, you must back up its
 // configuration before calling this function and restore it afterward.
 //
 void
-InitSysPll(Uint16 clock_source, Uint16 imult, Uint16 fmult, Uint16 divsel)
+InitSysPll(Uint16 clock_source, Uint16 imult, Uint16 fmult, Uint16 divsel) // 1, 10, 0, 1
 {
     Uint32 timeout, retries, temp_syspllmult, pllLockStatus;
     bool status;
@@ -412,6 +424,7 @@ InitSysPll(Uint16 clock_source, Uint16 imult, Uint16 fmult, Uint16 divsel)
         return;
     }
 
+    // 기준 클럭 소스가 변경되었으면 해당 클럭 소스로 스위칭(CLKSRCCTL1 레지스터)
     if(((clock_source & 0x3) != ClkCfgRegs.CLKSRCCTL1.bit.OSCCLKSRCSEL) ||
        (((clock_source & 0x4) >> 2) != ClkCfgRegs.XTALCR.bit.SE))
     {
@@ -426,7 +439,7 @@ InitSysPll(Uint16 clock_source, Uint16 imult, Uint16 fmult, Uint16 divsel)
                 break;
 
             case XTAL_OSC:
-                SysXtalOscSel();
+                SysXtalOscSel(); // 외부 크리스탈 사용(현재 설정)
                 break;
 
             case XTAL_OSC_SE:
@@ -438,7 +451,7 @@ InitSysPll(Uint16 clock_source, Uint16 imult, Uint16 fmult, Uint16 divsel)
     EALLOW;
 
     //
-    // First modify the PLL multipliers
+    // First modify the PLL multipliers (현재 imult : 10)
     //
     if(imult != ClkCfgRegs.SYSPLLMULT.bit.IMULT ||
        fmult != ClkCfgRegs.SYSPLLMULT.bit.FMULT)
@@ -501,7 +514,7 @@ InitSysPll(Uint16 clock_source, Uint16 imult, Uint16 fmult, Uint16 divsel)
             }
 
             EDIS;
-
+            // DCC(Digital Clock Comparator)를 사용해 실제 PLL 주파수가 올바른지 확인
             status = IsPLLValid(clock_source, imult, fmult);
 
             //
@@ -518,7 +531,7 @@ InitSysPll(Uint16 clock_source, Uint16 imult, Uint16 fmult, Uint16 divsel)
         status = true;
     }
 
-    if(status)
+    if(status) // PLL이 유효하면 최종 분주 및 활성화
     {
         EALLOW;
         //

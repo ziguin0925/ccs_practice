@@ -49,6 +49,7 @@
 "./DSP_SOURCE/f28004x_sysctrl.obj"
 "./DSP_SOURCE/f28004x_usdelay.obj"
 "./easyDSP/easy28x_bitfield_v11.2.obj"
+"./src/handler/epwm.obj"
 "../280049_FLASH_lnk.cmd"
 "../f28004x_headers_nonbios.cmd"
 -llibc.a

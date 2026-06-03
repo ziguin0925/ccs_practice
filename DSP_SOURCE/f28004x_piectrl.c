@@ -49,6 +49,7 @@
 //
 // InitPieCtrl - This function initializes the PIE control registers
 // to a known state.
+//  Peripheral Interrupt Expansion
 //
 void
 InitPieCtrl(void)
