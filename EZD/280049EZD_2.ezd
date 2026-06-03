@@ -1,0 +1,28 @@
+[Basic Page]
+m_strPrjFileName = C:\Users\KNU007\Desktop\280049EZD_2\EZD\280049EZD_2.ezd
+m_straOutFileName[0] = C:\Users\KNU007\Desktop\280049EZD_2\EZD\easyDSP_FlashApiWrapper.out
+m_straOutFileName[1] = 
+m_straOutFileName[2] = 
+m_straOutFileName[3] = 
+m_strDSPType = TMS320F280049
+m_strCommPort = SCI
+m_strDebuggingModel = dwarf
+m_strDSPOption = 
+m_baIsCoreEz[0] = 1
+m_baIsCoreEz[1] = 0
+m_baIsCoreEz[2] = 0
+m_baIsCoreEz[3] = 0
+[Parallel & RS232 Port]
+m_strProtocol = Normal
+[USB Port]
+m_uBPS = 38400
+m_uWaitMoreMicroTime = 1500
+m_bIsWirelessEnabled = 0
+[Miscellaneous]
+m_bVariableAutoSeek = 1
+m_bStopWhenSuccessiveFail = 0
+m_bDisplayPrintableChar = 0
+m_bHighlightChange = 1
+m_strEditor = 
+[Project Information]
+m_uVersion = 1250
