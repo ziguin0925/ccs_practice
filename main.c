@@ -4,184 +4,13 @@
 #include "interrupt.h"
 #include "driverlib.h"
 
-#define EPWM1_TIMER_TBPRD  2000U
-#define EPWM1_MAX_CMPA     1950U
-#define EPWM1_MIN_CMPA       50U
-#define EPWM1_MAX_CMPB     1950U
-#define EPWM1_MIN_CMPB       50U
-
-
-#define EPWM_CMP_UP           1U
-#define EPWM_CMP_DOWN         0U
 
 
 int fortesta = 0;
 float for_test_B = 0.02;
-typedef struct
-{
-    uint32_t epwmModule;
-    uint16_t epwmCompADirection;
-    uint16_t epwmCompBDirection;
-    uint16_t epwmTimerIntCount;
-    uint16_t epwmMaxCompA;
-    uint16_t epwmMinCompA;
-    uint16_t epwmMaxCompB;
-    uint16_t epwmMinCompB;
-}epwmInformation;
 
-
-epwmInformation epwm1Info;
-/**
- * main.c
- */
-
-__interrupt void epwm1ISR(void)
-{
-    //
-    // Update the CMPA and CMPB values
-    //
-    updateCompare(&epwm1Info);
-
-    //
-    // Clear INT flag for this timer
-    //
-    EPWM_clearEventTriggerInterruptFlag(EPWM1_BASE);
-
-    //
-    // Acknowledge interrupt group
-    //
-    Interrupt_clearACKGroup(INTERRUPT_ACK_GROUP3);
-}
-
-
-
-void initEPWM1()
-{
-    //
-    // Information this example uses to keep track of the direction the
-    // CMPA/CMPB values are moving, the min and max allowed values and
-    // a pointer to the correct ePWM registers
-    //
-    epwm1Info.epwmCompADirection = EPWM_CMP_UP;
-    epwm1Info.epwmCompBDirection = EPWM_CMP_DOWN;
-    epwm1Info.epwmTimerIntCount = 0U;
-    epwm1Info.epwmModule = EPWM1_BASE;
-    epwm1Info.epwmMaxCompA = EPWM1_MAX_CMPA;
-    epwm1Info.epwmMinCompA = EPWM1_MIN_CMPA;
-    epwm1Info.epwmMaxCompB = EPWM1_MAX_CMPB;
-    epwm1Info.epwmMinCompB = EPWM1_MIN_CMPB;
-}
-
-void updateCompare(epwmInformation epwmInfo)
-{
-    uint16_t compAValue;
-    uint16_t compBValue;
-
-    compAValue = EPWM_getCounterCompareValue(epwmInfo.epwmModule,
-                                             EPWM_COUNTER_COMPARE_A);
-
-    compBValue = EPWM_getCounterCompareValue(epwmInfo.epwmModule,
-                                             EPWM_COUNTER_COMPARE_B);
-
-    //
-    //  Change the CMPA/CMPB values every 10th interrupt.
-    //
-    if(epwmInfo.epwmTimerIntCount == 10U)
-    {
-        epwmInfo.epwmTimerIntCount = 0U;
-
-        //
-        // If we were increasing CMPA, check to see if we reached the max
-        // value. If not, increase CMPA else, change directions and decrease
-        // CMPA
-        //
-        if(epwmInfo.epwmCompADirection == EPWM_CMP_UP)
-        {
-            if(compAValue < (epwmInfo.epwmMaxCompA))
-            {
-                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
-                                            EPWM_COUNTER_COMPARE_A,
-                                            ++compAValue);
-            }
-            else
-            {
-                epwmInfo.epwmCompADirection = EPWM_CMP_DOWN;
-                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
-                                            EPWM_COUNTER_COMPARE_A,
-                                            --compAValue);
-            }
-        }
-        //
-        // If we were decreasing CMPA, check to see if we reached the min
-        // value. If not, decrease CMPA else, change directions and increase
-        // CMPA
-        //
-        else
-        {
-            if( compAValue == (epwmInfo.epwmMinCompA))
-            {
-                epwmInfo.epwmCompADirection = EPWM_CMP_UP;
-                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
-                                            EPWM_COUNTER_COMPARE_A,
-                                            ++compAValue);
-            }
-            else
-            {
-                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
-                                            EPWM_COUNTER_COMPARE_A,
-                                            --compAValue);
-            }
-        }
-
-        //
-        // If we were increasing CMPB, check to see if we reached the max
-        // value. If not, increase CMPB else, change directions and decrease
-        // CMPB
-        //
-        if(epwmInfo.epwmCompBDirection == EPWM_CMP_UP)
-        {
-            if(compBValue < (epwmInfo.epwmMaxCompB))
-            {
-                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
-                                            EPWM_COUNTER_COMPARE_B,
-                                            ++compBValue);
-            }
-            else
-            {
-                epwmInfo.epwmCompBDirection = EPWM_CMP_DOWN;
-                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
-                                            EPWM_COUNTER_COMPARE_B,
-                                            --compBValue);
-            }
-        }
-        //
-        // If we were decreasing CMPB, check to see if we reached the min
-        // value. If not, decrease CMPB else, change directions and increase
-        // CMPB
-        //
-        else
-        {
-            if(compBValue == (epwmInfo.epwmMinCompB))
-            {
-                epwmInfo.epwmCompBDirection = EPWM_CMP_UP;
-                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
-                                            EPWM_COUNTER_COMPARE_B,
-                                            ++compBValue);
-            }
-            else
-            {
-                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
-                                            EPWM_COUNTER_COMPARE_B,
-                                            --compBValue);
-            }
-        }
-    }
-    else
-    {
-        epwmInfo.epwmTimerIntCount++;
-    }
-}
-
+void Init_EPwm_1(void);
+void InitEPwm1Gpio(void);
 
 int main(void)
 {
@@ -191,30 +20,80 @@ int main(void)
     IER = 0x0000;               // Core Interrupts Enable Register �ʱ�ȭ
     IFR = 0x0000;               // Core Interrupt Flag Register �ʱ�ȭ
     InitPieVectTable();
+
+    EALLOW;
+    CpuSysRegs.PCLKCR0.bit.TBCLKSYNC = 0; 
+    EDIS;
+    ERTM;
+
+
     easyDSP_SCI_Init();
 
     Interrupt_initModule();
     Interrupt_initVectorTable();
-
     
     SysCtl_disablePeripheral(SYSCTL_PERIPH_CLK_TBCLKSYNC);
-    
-    // Board_init();
-    GPIO_setPinConfig(GPIO_0_EPWM1A);
-    GPIO_setPinConfig(GPIO_1_EPWM1B);
-    
-    Interrupt_register(INT_EPWM1, &epwm1ISR);
-
-    Interrupt_enable(INT_EPWM1);
-
-    //
-    // Enable Global Interrupt (INTM) and realtime interrupt (DBGM)
-    //
     EINT;
-    ERTM;
 
     while(1)
     {};
-  return 0;
 }
 
+void InitEPwm1Gpio(void)
+{
+    EALLOW;
+
+    GpioCtrlRegs.GPAPUD.bit.GPIO0 = 1;    // Disable pull-up on GPIO0 (EPWM1A)
+    GpioCtrlRegs.GPAPUD.bit.GPIO1 = 1;    // Disable pull-up on GPIO1 (EPWM1B)
+
+    GpioCtrlRegs.GPAMUX1.bit.GPIO0 = 1;   // Configure GPIO0 as EPWM1A
+    GpioCtrlRegs.GPAMUX1.bit.GPIO1 = 1;   // Configure GPIO1 as EPWM1B
+
+    EDIS;
+}
+
+void Init_EPwm_1()      //PWM f = TBCLK / (2 * TBPRD) = 100MHz / (2 * 1000) = 50kHz
+{
+    EALLOW;
+    EPwm1Regs.TZCTL.bit.TZA         = TZ_FORCE_LO;          // Trip zone on -> Force EPWM1A to low
+    EPwm1Regs.TZCTL.bit.TZB         = TZ_FORCE_LO;          // Trip zone on -> Force EPWM1B to low
+
+    EPwm1Regs.TZFRC.bit.OST         = 1;                    // One shot trip active -> Clear PWM
+    EDIS;
+
+    EPwm1Regs.TBPRD                 =   1000;      // Set timer period, PRD = 1000
+    EPwm1Regs.TBCTR                 =   0x0000;             // Clear counter
+    EPwm1Regs.TBPHS.bit.TBPHS       =   0x0000;             // Clear phase
+
+    //TBCLK = SYSCLK / (HSPCLKDIV * CLKDIV) = SYSCLK = 100MHz
+    EPwm1Regs.TBCTL.bit.HSPCLKDIV   =   TB_DIV1;            // divider = /1
+    EPwm1Regs.TBCTL.bit.CLKDIV      =   TB_DIV1;            // divider = /1
+    EPwm1Regs.TBCTL.bit.CTRMODE     =   TB_COUNT_UPDOWN;
+    EPwm1Regs.TBCTL.bit.PHSEN       =   TB_ENABLE;          // Phase Loading 활성화 -> 다른 PWM 모듈과 동기화 시 필요
+    EPwm1Regs.TBCTL.bit.PRDLD       =   TB_SHADOW;          // 주기(TBPRD) 값을 shadow 레지스터에서 읽어옴 (카운터 = 0 일 때)
+    EPwm1Regs.TBCTL.bit.SYNCOSEL    =   TB_CTR_ZERO;        // 다른 PMW 모듈과 동기화 위해, 카운터 0일 때 Sync out 신호 발생 -> Master
+
+    EPwm1Regs.CMPCTL.bit.SHDWAMODE  =   CC_SHADOW;          // CMPA Shadow mode Enable
+    EPwm1Regs.CMPCTL.bit.SHDWBMODE  =   CC_SHADOW;          // CMPB Shadow mode Enable
+    EPwm1Regs.CMPCTL.bit.LOADAMODE  =   CC_CTR_ZERO;        // Shadow -> Active 로딩 시점: 카운터가 0일 때 (CTR=ZERO)
+    EPwm1Regs.CMPCTL.bit.LOADBMODE  =   CC_CTR_ZERO;        // Shadow -> Active 로딩 시점: 카운터가 0일 때 (CTR=ZERO)
+
+    EPwm1Regs.AQCTLA.bit.CAU        =   AQ_CLEAR;           // Action when counter = CMPA on up-count is Clear
+    EPwm1Regs.AQCTLA.bit.CAD        =   AQ_SET;             // Action when counter = CMPA on down-count is Set
+
+    EPwm1Regs.CMPA.bit.CMPA         =   0x0000;             //Clear Compare Regs
+
+    EPwm1Regs.DBCTL.bit.OUT_MODE    =   DB_FULL_ENABLE;     // EPWMxA/B에 대해 상승(RED)/하강(FED) 에지 모두 데드 밴드 활성화
+    EPwm1Regs.DBCTL.bit.POLSEL      =   DB_ACTV_HIC;        // EPWMxB는 EPWMxA의 반전(inverted) 신호로 출력 (상보적인 신호)
+    EPwm1Regs.DBCTL.bit.IN_MODE     =   DBA_ALL;            // EPWMxA 신호를 데드 밴드 로직의 입력 소스로 사용
+    EPwm1Regs.DBRED.bit.DBRED       =   20;       // 상승 에지 데드 밴드 시간 (20 * TBCLK cycles) 1us Delay
+    EPwm1Regs.DBFED.bit.DBFED       =   20;       // 상승 에지 데드 밴드 시간 (20 * TBCLK cycles) 1us Delay
+
+    EPwm1Regs.ETSEL.bit.SOCAEN      = 1;                    // SOCA 이벤트 생성 기능 활성화
+    EPwm1Regs.ETSEL.bit.SOCASEL     = 2;                    // 트리거 시점: 카운터가 '주기값(TBPRD)'에 도달했을 때.
+    EPwm1Regs.ETPS.bit.SOCAPRD      = 1;                    // Generate pulse on 1st event
+
+    EPwm1Regs.ETSEL.bit.INTSEL      = ET_CTR_ZERO;          // Select INT on Zero event
+    EPwm1Regs.ETSEL.bit.INTEN       = 1;                    // Enable INT
+    EPwm1Regs.ETPS.bit.INTPRD       = ET_1ST;               // Generate INT on 1st event
+}
