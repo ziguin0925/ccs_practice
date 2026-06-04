@@ -72,41 +72,41 @@ void initEPWM1()
     epwm1Info.epwmMinCompB = EPWM1_MIN_CMPB;
 }
 
-void updateCompare(epwmInformation *epwmInfo)
+void updateCompare(epwmInformation epwmInfo)
 {
     uint16_t compAValue;
     uint16_t compBValue;
 
-    compAValue = EPWM_getCounterCompareValue(epwmInfo->epwmModule,
+    compAValue = EPWM_getCounterCompareValue(epwmInfo.epwmModule,
                                              EPWM_COUNTER_COMPARE_A);
 
-    compBValue = EPWM_getCounterCompareValue(epwmInfo->epwmModule,
+    compBValue = EPWM_getCounterCompareValue(epwmInfo.epwmModule,
                                              EPWM_COUNTER_COMPARE_B);
 
     //
     //  Change the CMPA/CMPB values every 10th interrupt.
     //
-    if(epwmInfo->epwmTimerIntCount == 10U)
+    if(epwmInfo.epwmTimerIntCount == 10U)
     {
-        epwmInfo->epwmTimerIntCount = 0U;
+        epwmInfo.epwmTimerIntCount = 0U;
 
         //
         // If we were increasing CMPA, check to see if we reached the max
         // value. If not, increase CMPA else, change directions and decrease
         // CMPA
         //
-        if(epwmInfo->epwmCompADirection == EPWM_CMP_UP)
+        if(epwmInfo.epwmCompADirection == EPWM_CMP_UP)
         {
-            if(compAValue < (epwmInfo->epwmMaxCompA))
+            if(compAValue < (epwmInfo.epwmMaxCompA))
             {
-                EPWM_setCounterCompareValue(epwmInfo->epwmModule,
+                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
                                             EPWM_COUNTER_COMPARE_A,
                                             ++compAValue);
             }
             else
             {
-                epwmInfo->epwmCompADirection = EPWM_CMP_DOWN;
-                EPWM_setCounterCompareValue(epwmInfo->epwmModule,
+                epwmInfo.epwmCompADirection = EPWM_CMP_DOWN;
+                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
                                             EPWM_COUNTER_COMPARE_A,
                                             --compAValue);
             }
@@ -118,16 +118,16 @@ void updateCompare(epwmInformation *epwmInfo)
         //
         else
         {
-            if( compAValue == (epwmInfo->epwmMinCompA))
+            if( compAValue == (epwmInfo.epwmMinCompA))
             {
-                epwmInfo->epwmCompADirection = EPWM_CMP_UP;
-                EPWM_setCounterCompareValue(epwmInfo->epwmModule,
+                epwmInfo.epwmCompADirection = EPWM_CMP_UP;
+                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
                                             EPWM_COUNTER_COMPARE_A,
                                             ++compAValue);
             }
             else
             {
-                EPWM_setCounterCompareValue(epwmInfo->epwmModule,
+                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
                                             EPWM_COUNTER_COMPARE_A,
                                             --compAValue);
             }
@@ -138,18 +138,18 @@ void updateCompare(epwmInformation *epwmInfo)
         // value. If not, increase CMPB else, change directions and decrease
         // CMPB
         //
-        if(epwmInfo->epwmCompBDirection == EPWM_CMP_UP)
+        if(epwmInfo.epwmCompBDirection == EPWM_CMP_UP)
         {
-            if(compBValue < (epwmInfo->epwmMaxCompB))
+            if(compBValue < (epwmInfo.epwmMaxCompB))
             {
-                EPWM_setCounterCompareValue(epwmInfo->epwmModule,
+                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
                                             EPWM_COUNTER_COMPARE_B,
                                             ++compBValue);
             }
             else
             {
-                epwmInfo->epwmCompBDirection = EPWM_CMP_DOWN;
-                EPWM_setCounterCompareValue(epwmInfo->epwmModule,
+                epwmInfo.epwmCompBDirection = EPWM_CMP_DOWN;
+                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
                                             EPWM_COUNTER_COMPARE_B,
                                             --compBValue);
             }
@@ -161,16 +161,16 @@ void updateCompare(epwmInformation *epwmInfo)
         //
         else
         {
-            if(compBValue == (epwmInfo->epwmMinCompB))
+            if(compBValue == (epwmInfo.epwmMinCompB))
             {
-                epwmInfo->epwmCompBDirection = EPWM_CMP_UP;
-                EPWM_setCounterCompareValue(epwmInfo->epwmModule,
+                epwmInfo.epwmCompBDirection = EPWM_CMP_UP;
+                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
                                             EPWM_COUNTER_COMPARE_B,
                                             ++compBValue);
             }
             else
             {
-                EPWM_setCounterCompareValue(epwmInfo->epwmModule,
+                EPWM_setCounterCompareValue(epwmInfo.epwmModule,
                                             EPWM_COUNTER_COMPARE_B,
                                             --compBValue);
             }
@@ -178,7 +178,7 @@ void updateCompare(epwmInformation *epwmInfo)
     }
     else
     {
-        epwmInfo->epwmTimerIntCount++;
+        epwmInfo.epwmTimerIntCount++;
     }
 }
 
@@ -196,13 +196,14 @@ int main(void)
     Interrupt_initModule();
     Interrupt_initVectorTable();
 
-    Interrupt_register(INT_EPWM1, &epwm1ISR);
-
+    
     SysCtl_disablePeripheral(SYSCTL_PERIPH_CLK_TBCLKSYNC);
-
+    
     // Board_init();
     GPIO_setPinConfig(GPIO_0_EPWM1A);
     GPIO_setPinConfig(GPIO_1_EPWM1B);
+    
+    Interrupt_register(INT_EPWM1, &epwm1ISR);
 
     Interrupt_enable(INT_EPWM1);
 
