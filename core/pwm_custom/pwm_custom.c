@@ -131,7 +131,7 @@ void CreateEPwm(uint16_t epwm_base, EPWM_Custom epwm_signal)
         EPWM_forceSyncPulse(epwm_base);
         EPWM_enablePhaseShiftLoad(epwm_base);
         EPWM_setPhaseShift(epwm_base, epwm_signal.phaseShift);
-        EPWM_setSyncOutPulseMode(epwm_base, EPWM_SYNC_OUT_PULSE_ON_EPWMxSYNCIN); // 이거 하면 epwm2, 3동기화 됨. EPWMxSYNCIN 이거 왜 안되는지 모르겠음
+        EPWM_setSyncOutPulseMode(epwm_base, EPWM_SYNC_OUT_PULSE_ON_COUNTER_ZERO); // 이거 하면 epwm2, 3동기화 됨. EPWMxSYNCIN 이거 왜 안되는지 모르겠음
         EPWM_setCountModeAfterSync(epwm_base, EPWM_COUNT_MODE_UP_AFTER_SYNC);
     }
 
