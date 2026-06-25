@@ -3,7 +3,7 @@
 #include "pwm_custom.h"
 #include "device.h"
 
-volatile uint16_t TBPRD_BASE  = 1000;
+volatile uint16_t switch_pattern= 1;
 
 volatile uint16_t epwm1_isr_count = 0;
 volatile uint16_t epwm2_isr_count = 0;
@@ -15,10 +15,10 @@ volatile uint16_t TBPRD_epwm2 = 0;
 volatile uint16_t CMPA_epwm2 = 0;
 volatile uint16_t TBPHS_epwm2 = 0;
 
-volatile float  temp_epwm3 = 1;
-volatile uint16_t TBPRD_epwm3 = 0;
-volatile uint16_t CMPA_epwm3 = 0;
-volatile uint16_t TBPHS_epwm3 = 0;
+volatile float  temp_epwm4 = 1;
+volatile uint16_t TBPRD_epwm4 = 0;
+volatile uint16_t CMPA_epwm4 = 0;
+volatile uint16_t TBPHS_epwm4 = 0;
 
 volatile float  temp_epwm1 = 1;
 volatile uint16_t TBPRD_epwm1 = 0;
@@ -39,65 +39,51 @@ void pwm_init(void)
 
     Interrupt_register(INT_EPWM1, &epwm1_isr);
     Interrupt_enable(INT_EPWM1);
-//    Interrupt_register(INT_EPWM3, &epwm3_isr);
-//    Interrupt_enable(INT_EPWM3);
-
-//    EALLOW;
-//    // Peripheral Interrupt Expansion
-////    PieVectTable.EPWM2_INT = &epwm2_isr;
-//    // Table 3-5. PIE Interrupt Vectors
-//    // PIE Group 3 Vectors - Muxed into CPU INT3
-//    PieCtrlRegs.PIEIER3.bit.INTx2 = 1;      //ePWM2
-//    EDIS;
 
     // Use ePWM pin enable
     InitEPwm1Gpio();
     InitEPwm2Gpio();
-    InitEPwm3Gpio();
+    InitEPwm4Gpio();
 
 
     EALLOW;
     CpuSysRegs.PCLKCR2.bit.EPWM1 = 1;
     CpuSysRegs.PCLKCR2.bit.EPWM2 = 1;
-    CpuSysRegs.PCLKCR2.bit.EPWM3 = 1;
+    CpuSysRegs.PCLKCR2.bit.EPWM4 = 1;
     CpuSysRegs.PCLKCR0.bit.TBCLKSYNC = 0;
     EDIS;
 
 
+    Init_EPwm_1();
+    Init_EPwm_2();
+    Init_EPwm_4();
+    EPWM_setupEPWMLinks(EPWM2_BASE, EPWM_LINK_WITH_EPWM_1, EPWM_LINK_TBPRD);
+    EPWM_setupEPWMLinks(EPWM4_BASE, EPWM_LINK_WITH_EPWM_1, EPWM_LINK_TBPRD);
 
-    EPWM_SignalParams pwm_base_signal = {
-                .freqInHz = 50000,
-                .dutyValA = 0.5f,
-//                .dutyValB = 0.5f,
-                .sysClkInHz = DEVICE_SYSCLK_FREQ,
-                .invertSignalB = false,
-                .tbCtrMode = EPWM_COUNTER_MODE_UP_DOWN,
-                .tbClkDiv = EPWM_CLOCK_DIVIDER_1,
-                .tbHSClkDiv = EPWM_HSCLOCK_DIVIDER_1
-        };
+    // 데드밴드 설정
+    // DBCTL 레지스터의 OUT_MODE 비트를 사용하여 RED/FED 딜레이 모드를 활성화
+    //  - EPWM_DB_RED: 상승 에지 지연 적용
+    //  - EPWM_DB_FED: 하강 에지 지연 적용
+    // 관련 레지스터: EPWM_O_DBCTL
+    EPWM_setDeadBandDelayMode(EPWM4_BASE, EPWM_DB_RED, true);   // DBCTL.OUT_MODE RED 설정
+    EPWM_setDeadBandDelayMode(EPWM4_BASE, EPWM_DB_FED, true);   // DBCTL.OUT_MODE FED 설정
 
-    EPWM_Custom pwm1_custom ={
-           .epwm_signal_params = pwm_base_signal,
-           .master_bit = true,
-           .phaseShift = 0
-    };
+    // DBCTL.IN_MODE을 설정하여 딜레이 입력 소스를 선택
+    //  - EPWM_DB_INPUT_EPWMA: EPWM1A 신호를 RED 입력으로 사용
+    //  - EPWM_DB_INPUT_DB_RED: RED 출력 후 하강 에지 입력으로 사용하여 A/B 보수 신호 생성
+    // 관련 레지스터: EPWM_O_DBCTL
+    EPWM_setRisingEdgeDeadBandDelayInput(EPWM4_BASE, EPWM_DB_INPUT_EPWMA);
+    EPWM_setFallingEdgeDeadBandDelayInput(EPWM4_BASE, EPWM_DB_INPUT_EPWMA);
+
+    // RED - POLSEL의 비트 0, FED - POLSEL 비트 1
+    EPWM_setDeadBandDelayPolarity(EPWM4_BASE, EPWM_DB_RED, EPWM_DB_POLARITY_ACTIVE_HIGH);
+    EPWM_setDeadBandDelayPolarity(EPWM4_BASE, EPWM_DB_FED, EPWM_DB_POLARITY_ACTIVE_LOW);
 
 
-    EPWM_Custom pwm2_custom ={
-           .epwm_signal_params = pwm_base_signal,
-           .master_bit = false,
-           .phaseShift = 1000
-    };
-
-    EPWM_Custom pwm3_custom ={
-           .epwm_signal_params = pwm_base_signal,
-           .master_bit = false,
-           .phaseShift = 1000
-    };
-
-    CreateEPwm(EPWM1_BASE, pwm1_custom); // MASTER
-    CreateEPwm(EPWM2_BASE, pwm2_custom);
-    CreateEPwm(EPWM3_BASE, pwm3_custom);
+    // RED/FED 값을 설정하여 deadband 시간을 결정
+    // 관련 레지스터: EPWM_O_DBRED, EPWM_O_DBFED
+    EPWM_setRisingEdgeDelayCount(EPWM4_BASE, 50);   // RED = 20 TBCLK
+    EPWM_setFallingEdgeDelayCount(EPWM4_BASE, 50);  // FED = 20 TBCLK
 
 
     EALLOW;
@@ -130,9 +116,9 @@ void CreateEPwm(uint16_t epwm_base, EPWM_Custom epwm_signal)
     else{
         EPWM_forceSyncPulse(epwm_base);
         EPWM_enablePhaseShiftLoad(epwm_base);
-        EPWM_setPhaseShift(epwm_base, epwm_signal.phaseShift);
         EPWM_setSyncOutPulseMode(epwm_base, EPWM_SYNC_OUT_PULSE_ON_EPWMxSYNCIN); // 이거 하면 epwm2, 3동기화 됨. EPWMxSYNCIN 이거 왜 안되는지 모르겠음
         EPWM_setCountModeAfterSync(epwm_base, EPWM_COUNT_MODE_UP_AFTER_SYNC);
+        EPWM_setupEPWMLinks(epwm_base, EPWM_LINK_WITH_EPWM_1, EPWM_LINK_TBPRD);
     }
 
 
@@ -208,10 +194,10 @@ void InitEPwm2Gpio(void)
     EDIS;
 }
 
-void InitEPwm3Gpio(void)
+void InitEPwm4Gpio(void)
 {
-    GPIO_setPinConfig(GPIO_4_EPWM3A);
-    GPIO_setPinConfig(GPIO_5_EPWM3B);
+    GPIO_setPinConfig(GPIO_6_EPWM4A);
+    GPIO_setPinConfig(GPIO_7_EPWM4B);
 
 }
 
@@ -282,13 +268,29 @@ void ePWM_Force34_Trip(void)
 // typedef __interrupt void (*PINT)(void);
 __interrupt void epwm1_isr(void)
 {
-   
+
+
+    TBPRD_epwm4 = EPwm4Regs.TBPRD;
+    CMPA_epwm4 = EPwm4Regs.CMPA.bit.CMPA;
+    TBPHS_epwm4 = EPwm4Regs.TBPHS.bit.TBPHS;
+
 
     if(frequency_change != temp_epwm1)
     {
-        TBCLKSYNC_disable();
-
         uint16_t new_prd = (uint16_t)(TBPRD_BASE / frequency_change);
+
+        if(switch_pattern == 1 && EPwm4Regs.TBPHS.bit.TBPHS != 1000){
+            EPwm2Regs.TBPHS.bit.TBPHS       =   EPWM_getTimeBasePeriod(EPWM1_BASE);
+            EPwm4Regs.TBPHS.bit.TBPHS       =   EPWM_getTimeBasePeriod(EPWM1_BASE);
+        }
+
+        else if(switch_pattern == 2){
+            EPwm2Regs.TBPHS.bit.TBPHS       =   EPWM_getTimeBasePeriod(EPWM1_BASE);
+            EPwm4Regs.TBPHS.bit.TBPHS       =   0;
+        }
+
+//        TBCLKSYNC_enable();
+
 
         epwm1_isr_count++;
 
@@ -302,7 +304,7 @@ __interrupt void epwm1_isr(void)
         EPWM_setCounterCompareValue(
             EPWM1_BASE,
             EPWM_COUNTER_COMPARE_A,
-            (uint16_t)(TBPRD_BASE / frequency_change) / 2
+            new_prd / 2
         );
 
         temp_epwm1 = frequency_change;
@@ -310,9 +312,7 @@ __interrupt void epwm1_isr(void)
         // --------------------------------------------------------------------------------
 
 
-        EPWM_setTimeBasePeriod(EPWM2_BASE, new_prd);
-
-
+//        EPWM_setTimeBasePeriod(EPWM2_BASE, new_prd);
         EPWM_setCounterCompareValue(
                 EPWM2_BASE,
                 EPWM_COUNTER_COMPARE_A,
@@ -320,19 +320,18 @@ __interrupt void epwm1_isr(void)
         );
         EPWM_setPhaseShift(EPWM2_BASE, new_prd);
 
-        temp_epwm2 = frequency_change;
-
-        EPWM_setTimeBasePeriod(EPWM3_BASE, new_prd);
-
+        // epwm3
+//        EPWM_setTimeBasePeriod(EPWM4_BASE, new_prd);
         EPWM_setCounterCompareValue(
-            EPWM3_BASE,
+            EPWM4_BASE,
             EPWM_COUNTER_COMPARE_A,
             new_prd / 2
         );
-        EPWM_setPhaseShift(EPWM3_BASE, new_prd);
-        temp_epwm3 = frequency_change;
-        EPWM_forceSyncPulse(EPWM1_BASE);
-        TBCLKSYNC_enable();
+        EPWM_enablePhaseShiftLoad(EPWM4_BASE);
+        EPWM_setPhaseShift(EPWM4_BASE, new_prd);
+
+//        EPWM_forceSyncPulse(EPWM1_BASE);
+//        TBCLKSYNC_enable();
     }
 
     TBPRD_epwm2 = EPwm2Regs.TBPRD;
@@ -340,9 +339,9 @@ __interrupt void epwm1_isr(void)
     TBPHS_epwm2 = EPwm2Regs.TBPHS.bit.TBPHS;
 
 
-    TBPRD_epwm3 = EPwm3Regs.TBPRD;
-    CMPA_epwm3 = EPwm3Regs.CMPA.bit.CMPA;
-    TBPHS_epwm3 = EPwm3Regs.TBPHS.bit.TBPHS;
+    TBPRD_epwm4 = EPwm4Regs.TBPRD;
+    CMPA_epwm4 = EPwm4Regs.CMPA.bit.CMPA;
+    TBPHS_epwm4 = EPwm4Regs.TBPHS.bit.TBPHS;
 
     TBPRD_epwm1 = EPWM_getTimeBasePeriod(EPWM1_BASE);
 
@@ -410,4 +409,8 @@ void EPWM_high_low_AQ(uint16_t base, bool high_bit)
                                       EPWM_AQ_OUTPUT_HIGH,
                                       EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
     }
+}
+
+void pattern1_pwm(){
+
 }
