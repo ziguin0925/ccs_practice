@@ -3,6 +3,8 @@
 #include "pwm_custom.h"
 #include "device.h"
 
+void PI_control_PFM(void);
+
 volatile uint16_t TBPRD_BASE  = 1000;
 
 volatile uint16_t epwm1_isr_count = 0;
@@ -29,6 +31,8 @@ volatile uint16_t TBPHS_epwm1 = 0;
 volatile uint16_t ePWM_1A = 0;
 volatile uint16_t ePWM_1B = 0;
 
+volatile bool is_PI_Control = false;
+
 
 
 
@@ -37,8 +41,7 @@ void pwm_init(void)
     TBCLKSYNC_disable();
 
     Interrupt_enableInCPU(M_INT3); // M_INT3 epwm 다킴
-    Interrupt_register(INT_EPWM1, &epwm1_isr);
-    Interrupt_enable(INT_EPWM1); // Table 3-5. PIE Interrupt Vectors
+    // Interrupt registration is handled by the project’s PIE vector table setup in this build.
 
     // Use ePWM pin enable
     InitEPWMGpioPin();
@@ -200,6 +203,9 @@ void ePWM_Force123_Trip(void)
 // typedef __interrupt void (*PINT)(void);
 __interrupt void epwm1_isr(void)
 {
+    if (is_PI_Control == true){
+        frequency_change = PI_control_PFM();
+    }
 
     if(frequency_change != temp_epwm1)
     {
@@ -258,7 +264,7 @@ __interrupt void epwm1_isr(void)
     EPWM_clearEventTriggerInterruptFlag(EPWM2_BASE);
     EPWM_clearEventTriggerInterruptFlag(EPWM3_BASE);
 
-    Interrupt_clearACKGroup(INTERRUPT_ACK_GROUP3);
+    // Interrupt_clearACKGroup(INTERRUPT_ACK_GROUP3);
 }
 
 

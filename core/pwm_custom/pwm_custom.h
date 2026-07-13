@@ -18,8 +18,7 @@ void CreateEPwm(uint16_t, EPWM_Custom);
 void InitEPWMGpioPin(void);
 
 __interrupt void epwm1_isr(void);
-__interrupt void epwm2_isr(void);
-__interrupt void epwm3_isr(void);
+
 
 
 static inline void TBCLKSYNC_disable(void)
