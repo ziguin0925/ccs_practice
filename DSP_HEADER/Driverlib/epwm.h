@@ -3295,8 +3295,8 @@ EPWM_setDeadBandDelayMode(uint32_t base, EPWM_DeadBandDelayMode delayMode,
 //! of the Falling Edge or Rising Edge delay depending on the value of
 //! delayMode. Valid values for the variables are:
 //!   - delayMode
-//!       - EPWM_DB_RED   - Rising Edge delay
-//!       - EPWM_DB_FED   - Falling Edge delay
+//!       - EPWM_DB_RED   - Rising Edge delay POLSEL의 비트 1
+//!       - EPWM_DB_FED   - Falling Edge delay POLSEL 비트 0
 //!   - polarity
 //!       - EPWM_DB_POLARITY_ACTIVE_HIGH   - polarity is not inverted.
 //!       - EPWM_DB_POLARITY_ACTIVE_LOW    - polarity is inverted.
