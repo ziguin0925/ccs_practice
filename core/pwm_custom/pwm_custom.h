@@ -17,6 +17,10 @@ void pwm_init (void);
 void CreateEPwm(uint16_t, EPWM_Custom);
 void InitEPWMGpioPin(void);
 
+void EPWM_high_low_AQ(uint16_t base, bool high_bit);
+void startLlcPattern1A(void);
+void startLlcPattern2(void);
+
 __interrupt void epwm1_isr(void);
 
 
