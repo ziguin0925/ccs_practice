@@ -5,10 +5,10 @@
 #define PI_TSW 10.0f / 100000.0f
 
 // Reference
-float Vref = 48.0f;
+float Vref = 2.0f;
 
 // Feedback
-float Vout = 0.0f;
+float Vout_pi = 0.0f;
 
 // PI
 float error = 0.0f;
@@ -24,11 +24,11 @@ float fsw_max = 200000.0f;
 float fsw_min = 30000.0f;
 
 float PI_control_PFM(){
-    // ADC Read
-    Vout = ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER0);
+    // ADC Read  ADCaResultsRegs.ADCRESULT0
+    Vout_pi = ((float)ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER0) * 3.0f) / 4095.0f;
 
     // PI
-    error = Vref - Vout;
+    error = Vref - Vout_pi;
 
     //PI_TSW : 제어 주기
     // Δu=Kp(e(k)−e(k−1))+KiTse(k)

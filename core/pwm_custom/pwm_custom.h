@@ -19,7 +19,10 @@ void InitEPWMGpioPin(void);
 
 void EPWM_high_low_AQ(uint16_t base, bool high_bit);
 void startLlcPattern1A(void);
+void startLlcPattern1B(void);
 void startLlcPattern2(void);
+void startLlcPattern3A(void);
+void startLlcPattern3B(void);
 
 __interrupt void epwm1_isr(void);
 

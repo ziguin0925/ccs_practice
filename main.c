@@ -6,14 +6,18 @@
 #include "device.h"
 #include <stdbool.h>
 #include "./core/pwm_custom/pwm_custom.h"
-
+#include "gpio.h"
+#include "./core/adc_custom/adc_custom.h"
 
 
 int fortesta = 0;
 float for_test_B = 0.02;
 int Loopcnt;
 
+Uint16 adcValue;
 
+float Vout  = 0;
+uint16_t adcResult;
 
 int main(void)
 {
@@ -36,6 +40,9 @@ int main(void)
 
 
     pwm_init();
+    Init_Adc_Setup();
+
+
 
     // end init ePWM
     easyDSP_SCI_Init();
@@ -47,5 +54,7 @@ int main(void)
     while(1)
     {
         Loopcnt++;
+        adcResult = ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER0);
+        Vout = ((float)adcResult * 3.0f) / 4095.0f;
     };
 }
