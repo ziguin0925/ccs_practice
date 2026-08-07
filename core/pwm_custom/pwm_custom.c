@@ -18,6 +18,9 @@ volatile bool is_PI_Control = false;
 volatile uint8_t pattern_mode = 0;
 volatile uint8_t current_pattern = 0;
 
+volatile uint16_t cmp1;
+volatile uint16_t cmp2;
+volatile uint16_t cmp3;
 
 
 
@@ -46,7 +49,7 @@ void pwm_init(void)
     EPWM_SignalParams pwm_base_signal = {
                 .freqInHz = 50000,
                 .dutyValA = 0.5f,
-//                .dutyValB = 0.5f,
+                .dutyValB = 0.5f,
                 .sysClkInHz = DEVICE_SYSCLK_FREQ,
                 .invertSignalB = false,
                 .tbCtrMode = EPWM_COUNTER_MODE_UP_DOWN,
@@ -200,6 +203,21 @@ __interrupt void epwm1_isr(void)
         current_pattern = pattern_mode;
 
         TBCLKSYNC_disable();
+        // 강제 HIGH, LOW disable
+        EPWM_setActionQualifierContSWForceAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_DISABLED);
+        EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_DISABLED);
+        EPWM_setActionQualifierContSWForceAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_DISABLED);
+
+        EPWM_setActionQualifierContSWForceAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_DISABLED);
+        EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_DISABLED);
+        EPWM_setActionQualifierContSWForceAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_DISABLED);
+
+        if(pattern_mode != 2){
+            EPWM_setFallingEdgeDelayCount(EPWM1_BASE, 20U);
+            EPWM_setFallingEdgeDelayCount(EPWM2_BASE, 20U);
+            EPWM_setFallingEdgeDelayCount(EPWM3_BASE, 20U);
+        }
+
         switch(pattern_mode){
         case 1:
             startLlcPattern1A();
@@ -216,6 +234,15 @@ __interrupt void epwm1_isr(void)
         case 5:
             startLlcPattern3B();
             break;
+        case 6:
+            startLlcPattern3C();
+            break;
+        case 7:
+            startLlcPattern3D();
+            break;
+        case 8:
+            startLlcPattern4();
+            break;
         }
         TBCLKSYNC_enable();
     }
@@ -228,39 +255,23 @@ __interrupt void epwm1_isr(void)
     // 주파수 제어
     if(frequency_change != temp_epwm1)
     {
-
         uint16_t new_prd = (uint16_t)(TBPRD_BASE / frequency_change);
+        uint16_t global_cmpA;
 
-        // ePWM 1
-        EPWM_setTimeBasePeriod(EPWM1_BASE, new_prd); // TBPRD
-        EPWM_setCounterCompareValue(
-            EPWM1_BASE,
-            EPWM_COUNTER_COMPARE_A,
-            new_prd / 2
-        );
+        if(current_pattern == 2U || current_pattern == 6U || current_pattern == 7U){
+            global_cmpA  = new_prd / 2 - 10U;
+        }else{
+            global_cmpA  = new_prd / 2;
+        }
+
         temp_epwm1 = frequency_change;
-
-
-        // ePWM 2
-        EPWM_setCounterCompareValue(
-                EPWM2_BASE,
-                EPWM_COUNTER_COMPARE_A,
-                new_prd / 2
-        );
-    // AQ로 HIGH/LOW 액션을 반대로 주어 상보동작 하도록
-//        EPWM_setPhaseShift(EPWM2_BASE, new_prd);
-
-        // ePWM 3
-        EPWM_setCounterCompareValue(
-            EPWM3_BASE,
-            EPWM_COUNTER_COMPARE_A,
-            new_prd / 2
-        );
-//        EPWM_setPhaseShift(EPWM3_BASE, new_prd);
+        // AQ로 HIGH/LOW 액션을 반대로 주어 상보동작 하도록
+        EPWM_setTimeBasePeriod(EPWM1_BASE, new_prd); // TBPRD
+        EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, global_cmpA);
+        EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, current_pattern == 2? global_cmpA + 10U : global_cmpA);
+        EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, global_cmpA);
 //        EPWM_forceSyncPulse(EPWM1_BASE); // SWFSYNC
-
     }
-
     EPWM_clearEventTriggerInterruptFlag(EPWM1_BASE);
     EPWM_clearEventTriggerInterruptFlag(EPWM2_BASE);
     EPWM_clearEventTriggerInterruptFlag(EPWM3_BASE);
@@ -275,55 +286,33 @@ void EPWM_high_low_AQ(uint16_t base, bool high_bit)
     {
         // 올라갈 때 COMP만나면 HIGH
         // 내려갈 때 COMP 만나면 LOW
-
-        //
-        // Clear PWMxA on Zero
-        //
-        EPWM_setActionQualifierAction(base,
-                                      EPWM_AQ_OUTPUT_A,
-                                      EPWM_AQ_OUTPUT_LOW,
-                                      EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-
-        //
-        // Set PWMxA on event A, up count
-        //
-        EPWM_setActionQualifierAction(base,
-                                      EPWM_AQ_OUTPUT_A,
-                                      EPWM_AQ_OUTPUT_HIGH,
-                                      EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-
-        //
-        // Clear PWMxA on event A, down count
-        //
-        EPWM_setActionQualifierAction(base,
-                                      EPWM_AQ_OUTPUT_A,
-                                      EPWM_AQ_OUTPUT_LOW,
-                                      EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);// Clear PWMxA on Zero
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);// Set PWMxA on event A, up count
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);// Clear PWMxA on event A, down count
     }
     else{
         // 올라갈 때 COMP만나면 LOW
         // 내려갈 때 COMP 만나면 HIGH
-
-        EPWM_setActionQualifierAction(base,
-                                      EPWM_AQ_OUTPUT_A,
-                                      EPWM_AQ_OUTPUT_HIGH,
-                                      EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-
-
-        EPWM_setActionQualifierAction(base,
-                                      EPWM_AQ_OUTPUT_A,
-                                      EPWM_AQ_OUTPUT_LOW,
-                                      EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-
-        EPWM_setActionQualifierAction(base,
-                                      EPWM_AQ_OUTPUT_A,
-                                      EPWM_AQ_OUTPUT_HIGH,
-                                      EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
     }
 }
 
 
 void startLlcPattern1A(){
+
+    /*
+     * Up-Down count 기준 50% 위치 듀티로 dead band 조절
+     */
+    cmp1 = EPWM_getTimeBasePeriod(EPWM1_BASE) / 2U;
+    cmp2 = EPWM_getTimeBasePeriod(EPWM2_BASE) / 2U;
+    cmp3 = EPWM_getTimeBasePeriod(EPWM3_BASE) / 2U;
+
+    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmp1);
+    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmp2);
+    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmp3);
+
     EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_RED, true);
     EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_FED, false);
     EPWM_setFallingEdgeDeadBandDelayInput(EPWM1_BASE, EPWM_DB_INPUT_EPWMB);
@@ -350,78 +339,133 @@ void startLlcPattern1A(){
     // B 채널: Continuous Software Force를 사용하여 강제로 LOW 고정 [3]
     EPWM_setActionQualifierContSWForceAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_OUTPUT_LOW);
 
-    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-    EPWM_setActionQualifierContSWForceAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_OUTPUT_LOW);
-
-
     // A 채널: Zero에서 LOW, CMPA에서 HIGH (1, 3과 반대 동작) [4, 5]
     EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
     EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
     EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
     // B 채널: Continuous Software Force를 사용하여 강제로 HIGH 고정 [3]
     EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_OUTPUT_HIGH);
+
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+    EPWM_setActionQualifierContSWForceAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_OUTPUT_LOW);
+
     EPWM_setPhaseShift(EPWM1_BASE, 0);
     EPWM_setPhaseShift(EPWM2_BASE, 2U);
     EPWM_setPhaseShift(EPWM3_BASE, 2U);
 }
 
-void startLlcPattern1B(){
-    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_RED, false);
-    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_FED, true);
-    EPWM_setFallingEdgeDeadBandDelayInput(EPWM1_BASE, EPWM_DB_INPUT_EPWMB);
-    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_RED, false);
-    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_FED, true);
-    EPWM_setFallingEdgeDeadBandDelayInput(EPWM2_BASE, EPWM_DB_INPUT_EPWMB);
-    EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_RED, false);
-    EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_FED, true);
-    EPWM_setFallingEdgeDeadBandDelayInput(EPWM3_BASE, EPWM_DB_INPUT_EPWMB);
+void startLlcPattern1B(void)
+{
 
-    EPWM_setDeadBandDelayPolarity(EPWM1_BASE, EPWM_DB_RED, EPWM_DB_POLARITY_ACTIVE_HIGH);
-    EPWM_setDeadBandDelayPolarity(EPWM1_BASE, EPWM_DB_FED, EPWM_DB_POLARITY_ACTIVE_HIGH);
 
-    EPWM_setDeadBandDelayPolarity(EPWM2_BASE, EPWM_DB_RED, EPWM_DB_POLARITY_ACTIVE_HIGH);
-    EPWM_setDeadBandDelayPolarity(EPWM2_BASE, EPWM_DB_FED, EPWM_DB_POLARITY_ACTIVE_HIGH);
+    /*
+     * Up-Down count 기준 50% 위치 듀티로 dead band 조절
+     */
+    cmp1 = EPWM_getTimeBasePeriod(EPWM1_BASE) / 2U - 20U;
+    cmp2 = EPWM_getTimeBasePeriod(EPWM2_BASE) / 2U + 20U;
+    cmp3 = EPWM_getTimeBasePeriod(EPWM3_BASE) / 2U - 20U;
 
-    EPWM_setDeadBandDelayPolarity(EPWM3_BASE, EPWM_DB_RED, EPWM_DB_POLARITY_ACTIVE_HIGH);
-    EPWM_setDeadBandDelayPolarity(EPWM3_BASE, EPWM_DB_FED, EPWM_DB_POLARITY_ACTIVE_HIGH);
+    /*
+     * ============================================================
+     * 기존 AQ B 설정 완전 초기화
+     *
+     * EPWM_configureSignal()의 dutyValB 설정으로 생성된
+     * ZRO, PRD, CBU, CBD 등의 동작을 모두 제거한다.
+     *
+     * Pattern1B에서는 CMPB를 사용하지 않고 CMPA만 사용한다.
+     * ============================================================
+     */
+    EALLOW;
 
-    // A 채널: Zero에서 HIGH, CMPA에서 LOW (정방향)
-    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-    // B 채널: Continuous Software Force를 사용하여 강제로 LOW 고정 [3]
+    EPwm1Regs.AQCTLB.all = 0U;
+    EPwm2Regs.AQCTLB.all = 0U;
+    EPwm3Regs.AQCTLB.all = 0U;
+
+    EDIS;
+
     EPWM_setActionQualifierContSWForceAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_OUTPUT_LOW);
-
-    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+    EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_OUTPUT_HIGH);
     EPWM_setActionQualifierContSWForceAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_OUTPUT_LOW);
 
 
-    // A 채널: Zero에서 LOW, CMPA에서 HIGH (1, 3과 반대 동작) [4, 5]
+    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmp1);
+    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmp2);
+    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmp3);
+
+
+    EPWM_setCounterCompareShadowLoadMode(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, EPWM_COMP_LOAD_ON_CNTR_ZERO);
+    EPWM_setCounterCompareShadowLoadMode(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, EPWM_COMP_LOAD_ON_CNTR_ZERO);
+    EPWM_setCounterCompareShadowLoadMode(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, EPWM_COMP_LOAD_ON_CNTR_ZERO);
+
+
+    /* ePWM1 */
+    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_RED, false);
+    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_FED, true);
+    EPWM_setFallingEdgeDeadBandDelayInput(EPWM1_BASE, EPWM_DB_INPUT_EPWMB);
+    EPWM_setDeadBandDelayPolarity(EPWM1_BASE, EPWM_DB_FED, EPWM_DB_POLARITY_ACTIVE_HIGH);
+    EPWM_setFallingEdgeDelayCount(EPWM1_BASE, 0U); // 다른 패턴에서 다시 켜줘야함
+
+    /* ePWM2 */
+    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_RED, false);
+    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_FED,true);
+    EPWM_setFallingEdgeDeadBandDelayInput(EPWM2_BASE, EPWM_DB_INPUT_EPWMB);
+    EPWM_setDeadBandDelayPolarity(EPWM2_BASE, EPWM_DB_FED, EPWM_DB_POLARITY_ACTIVE_HIGH);
+    EPWM_setFallingEdgeDelayCount(EPWM2_BASE,0U);// 다른 패턴에서 다시 켜줘야함
+
+    /* ePWM3 */
+    EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_RED, false);
+    EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_FED,true);
+    EPWM_setFallingEdgeDeadBandDelayInput(EPWM3_BASE, EPWM_DB_INPUT_EPWMB);
+    EPWM_setDeadBandDelayPolarity(EPWM3_BASE, EPWM_DB_FED, EPWM_DB_POLARITY_ACTIVE_HIGH);
+    EPWM_setFallingEdgeDelayCount(EPWM3_BASE, 0U);// 다른 패턴에서 다시 켜줘야함
+
+
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+
+
     EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
     EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
     EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-    // B 채널: Continuous Software Force를 사용하여 강제로 HIGH 고정 [3]
-    EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_OUTPUT_HIGH);
-    EPWM_setPhaseShift(EPWM1_BASE, 0);
+
+
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH,EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+
+
+    EPWM_setPhaseShift(EPWM1_BASE, 0U);
     EPWM_setPhaseShift(EPWM2_BASE, 2U);
     EPWM_setPhaseShift(EPWM3_BASE, 2U);
 }
 
 
+
 void startLlcPattern2(){
-    EPWM_setActionQualifierContSWForceAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_DISABLED);
-    EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_DISABLED);
-    EPWM_setActionQualifierContSWForceAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_DISABLED);
+
+    /*
+     * Up-Down count 기준 50% 위치 듀티로 dead band 조절
+     */
+    cmp1 = EPWM_getTimeBasePeriod(EPWM1_BASE) / 2U;
+    cmp2 = EPWM_getTimeBasePeriod(EPWM2_BASE) / 2U;
+    cmp3 = EPWM_getTimeBasePeriod(EPWM3_BASE) / 2U;
+
+    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmp1);
+    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmp2);
+    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmp3);
+
+
     EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_RED, true);   // DBCTL.OUT_MODE RED 설정
     EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_FED, true);
     EPWM_setFallingEdgeDeadBandDelayInput(EPWM1_BASE, EPWM_DB_INPUT_EPWMA);
+
     EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_RED, true);
     EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_FED, true);
     EPWM_setFallingEdgeDeadBandDelayInput(EPWM2_BASE, EPWM_DB_INPUT_EPWMA);
+
     EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_RED, true);
     EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_FED, true);
     EPWM_setFallingEdgeDeadBandDelayInput(EPWM3_BASE, EPWM_DB_INPUT_EPWMA);
@@ -456,6 +500,17 @@ void startLlcPattern2(){
 }
 
 void startLlcPattern3A(){
+    /*
+     * Up-Down count 기준 50% 위치 듀티로 dead band 조절
+     */
+    cmp1 = EPWM_getTimeBasePeriod(EPWM1_BASE) / 2U;
+    cmp2 = EPWM_getTimeBasePeriod(EPWM2_BASE) / 2U;
+    cmp3 = EPWM_getTimeBasePeriod(EPWM3_BASE) / 2U;
+
+    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmp1);
+    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmp2);
+    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmp3);
+
 //    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_FED, true);
 //    EPWM_setFallingEdgeDeadBandDelayInput(EPWM1_BASE, EPWM_DB_INPUT_EPWMA);
 //    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_FED, true);
@@ -545,6 +600,17 @@ void startLlcPattern3A(){
 }
 
 void startLlcPattern3B(){
+    /*
+     * Up-Down count 기준 50% 위치 듀티로 dead band 조절
+     */
+    cmp1 = EPWM_getTimeBasePeriod(EPWM1_BASE) / 2U;
+    cmp2 = EPWM_getTimeBasePeriod(EPWM2_BASE) / 2U;
+    cmp3 = EPWM_getTimeBasePeriod(EPWM3_BASE) / 2U;
+
+    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmp1);
+    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmp2);
+    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmp3);
+
 //    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_FED, true);
 //    EPWM_setFallingEdgeDeadBandDelayInput(EPWM1_BASE, EPWM_DB_INPUT_EPWMA);
 //    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_FED, true);
@@ -630,3 +696,163 @@ void startLlcPattern3B(){
     // Phase
     EPwm3Regs.TBPHS.bit.TBPHS = 0;
 }
+// 6
+void startLlcPattern3C(void)
+{
+    EPWM_getTimeBasePeriod(EPWM1_BASE) / 2U + 10U;
+    EPWM_getTimeBasePeriod(EPWM3_BASE) / 2U - 10U;
+
+    EALLOW;
+
+    EPwm1Regs.AQCTLA.all = 0U;
+    EPwm1Regs.AQCTLB.all = 0U;
+
+    EPwm2Regs.AQCTLA.all = 0U;
+    EPwm2Regs.AQCTLB.all = 0U;
+
+    EPwm3Regs.AQCTLA.all = 0U;
+    EPwm3Regs.AQCTLB.all = 0U;
+
+    EDIS;
+
+    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_RED, false);
+    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_FED, false);
+    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_RED, false);
+    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_FED, false);
+    EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_RED, false);
+    EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_FED, false);
+
+    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmp1);
+    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmp3);
+
+    EPWM_setCounterCompareShadowLoadMode(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, EPWM_COMP_LOAD_ON_CNTR_ZERO);
+    EPWM_setCounterCompareShadowLoadMode(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, EPWM_COMP_LOAD_ON_CNTR_ZERO);
+
+    EPWM_setActionQualifierContSWForceAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_OUTPUT_HIGH);
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B,EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+
+    EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_OUTPUT_HIGH);
+    EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_OUTPUT_HIGH);
+
+    EPWM_setActionQualifierContSWForceAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_OUTPUT_LOW);
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+
+
+
+    EPWM_setPhaseShift(EPWM1_BASE, 0U);
+    EPWM_setPhaseShift(EPWM2_BASE, 2U);
+    EPWM_setPhaseShift(EPWM3_BASE, 2U);
+}
+
+//7
+void startLlcPattern3D(void)
+{
+    cmp1 = EPWM_getTimeBasePeriod(EPWM1_BASE) / 2U + 10U;
+    cmp3 = EPWM_getTimeBasePeriod(EPWM3_BASE) / 2U - 10U;
+
+
+    /*
+     * ============================================================
+     * 1. 이전 AQ 설정 초기화
+     * ============================================================
+     */
+    EALLOW;
+
+    EPwm1Regs.AQCTLA.all = 0U;
+    EPwm1Regs.AQCTLB.all = 0U;
+
+    EPwm2Regs.AQCTLA.all = 0U;
+    EPwm2Regs.AQCTLB.all = 0U;
+
+    EPwm3Regs.AQCTLA.all = 0U;
+    EPwm3Regs.AQCTLB.all = 0U;
+
+    EDIS;
+
+    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_RED, false);
+    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_FED, false);
+    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_RED, false);
+    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_FED, false);
+    EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_RED, false);
+    EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_FED, false);
+
+    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmp1);
+    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A,cmp3);
+
+    EPWM_setCounterCompareShadowLoadMode(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, EPWM_COMP_LOAD_ON_CNTR_ZERO);
+    EPWM_setCounterCompareShadowLoadMode(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, EPWM_COMP_LOAD_ON_CNTR_ZERO);
+
+
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+    EPWM_setActionQualifierContSWForceAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_OUTPUT_HIGH);
+
+    EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_OUTPUT_HIGH);
+    EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_OUTPUT_HIGH);
+
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A,EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+
+    EPWM_setActionQualifierContSWForceAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_OUTPUT_LOW);
+
+    EPWM_setPhaseShift(EPWM1_BASE, 0U);
+    EPWM_setPhaseShift(EPWM2_BASE, 2U);
+    EPWM_setPhaseShift(EPWM3_BASE, 2U);
+}
+
+void startLlcPattern4(){
+    /*
+     * Up-Down count 기준 50% 위치 듀티로 dead band 조절
+     */
+    cmp1 = EPWM_getTimeBasePeriod(EPWM1_BASE) / 2U;
+    cmp2 = EPWM_getTimeBasePeriod(EPWM2_BASE) / 2U;
+    cmp3 = EPWM_getTimeBasePeriod(EPWM3_BASE) / 2U;
+
+    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmp1);
+    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmp2);
+    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmp3);
+
+    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_RED, true);   // DBCTL.OUT_MODE RED 설정
+    EPWM_setDeadBandDelayMode(EPWM1_BASE, EPWM_DB_FED, true);
+    EPWM_setFallingEdgeDeadBandDelayInput(EPWM1_BASE, EPWM_DB_INPUT_EPWMA);
+
+    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_RED, true);   // DBCTL.OUT_MODE RED 설정
+    EPWM_setDeadBandDelayMode(EPWM2_BASE, EPWM_DB_FED, true);
+    EPWM_setFallingEdgeDeadBandDelayInput(EPWM2_BASE, EPWM_DB_INPUT_EPWMB);
+
+    EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_RED, true);
+    EPWM_setDeadBandDelayMode(EPWM3_BASE, EPWM_DB_FED, true);
+    EPWM_setFallingEdgeDeadBandDelayInput(EPWM3_BASE, EPWM_DB_INPUT_EPWMA);
+
+
+    EPWM_setDeadBandDelayPolarity(EPWM1_BASE, EPWM_DB_RED, EPWM_DB_POLARITY_ACTIVE_HIGH);
+    EPWM_setDeadBandDelayPolarity(EPWM1_BASE, EPWM_DB_FED, EPWM_DB_POLARITY_ACTIVE_LOW);
+
+    EPWM_setDeadBandDelayPolarity(EPWM2_BASE, EPWM_DB_RED, EPWM_DB_POLARITY_ACTIVE_HIGH);
+    EPWM_setDeadBandDelayPolarity(EPWM2_BASE, EPWM_DB_FED, EPWM_DB_POLARITY_ACTIVE_HIGH);
+
+    EPWM_setDeadBandDelayPolarity(EPWM3_BASE, EPWM_DB_RED, EPWM_DB_POLARITY_ACTIVE_HIGH);
+    EPWM_setDeadBandDelayPolarity(EPWM3_BASE, EPWM_DB_FED, EPWM_DB_POLARITY_ACTIVE_LOW);
+
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
+    EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+
+    // epwm2 모두 HIGH
+    EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_SW_OUTPUT_HIGH);
+    EPWM_setActionQualifierContSWForceAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_SW_OUTPUT_HIGH);
+
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
+    EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+
+    EPWM_setPhaseShift(EPWM1_BASE, 0);
+    EPWM_setPhaseShift(EPWM2_BASE, 2U);
+    EPWM_setPhaseShift(EPWM3_BASE, 2U);
+};

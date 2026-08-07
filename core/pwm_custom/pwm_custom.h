@@ -23,6 +23,9 @@ void startLlcPattern1B(void);
 void startLlcPattern2(void);
 void startLlcPattern3A(void);
 void startLlcPattern3B(void);
+void startLlcPattern3C(void);
+void startLlcPattern3D(void);
+void startLlcPattern4(void);
 
 __interrupt void epwm1_isr(void);
 
