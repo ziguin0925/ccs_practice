@@ -6,7 +6,7 @@
 #define LLC_PATTERN_MIN         1U
 #define LLC_PATTERN_MAX         8U
 #define LLC_PWM_COUNT           3U
-#define LLC_DEAD_COUNT          10
+#define LLC_DEAD_COUNT          15
 
 typedef struct
 {
@@ -18,7 +18,7 @@ typedef struct
 typedef enum
 {
     LLC_PATTERN_NONE = 0,
-    LLC_PATTERN_1A,
+    LLC_PATTERN_1A =1,
     LLC_PATTERN_1B,
     LLC_PATTERN_2,
     LLC_PATTERN_3A,

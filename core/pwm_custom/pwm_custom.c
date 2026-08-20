@@ -4,12 +4,22 @@
 #include "device.h"
 #include "../service/PI_control.h"
 
+volatile uint16_t test_count = 0;
+
 volatile uint16_t TBPRD_BASE = 1000U;
 volatile uint16_t epwm1_isr_count = 0U;
-volatile float frequency_change = 1.0f;
+volatile float frequency_change = 50000;
+volatile float current_frequency = 0.0f;
 volatile bool is_PI_Control = false;
-volatile uint8_t pattern_mode = LLC_PATTERN_NONE;
-volatile uint8_t current_pattern = LLC_PATTERN_NONE;
+volatile uint8_t pattern_mode = LLC_PATTERN_1A;
+volatile uint8_t current_pattern = LLC_PATTERN_1A;
+volatile uint8_t only_one_time_on = 0;
+volatile uint8_t start_bit = 0;
+volatile static uint8_t prev_start_bit = 0;
+
+volatile bool patternChanged = false;
+volatile bool periodChanged = false;
+
 
 static const uint32_t g_epwmBase[LLC_PWM_COUNT] =
 {
@@ -258,7 +268,6 @@ void pwm_init(void)
     CpuSysRegs.PCLKCR2.bit.EPWM3 = 1;
     EDIS;
 
-
     //PWM f = TBCLK / (2 * TBPRD)
     //50kHz = 100MHz / (2 * 1000)
     EPWM_SignalParams pwm_base_signal = {
@@ -286,15 +295,18 @@ void pwm_init(void)
         .phaseShift = 2U
     };
 
+
     CreateEPwm(EPWM1_BASE, pwm_master); // MASTER
     CreateEPwm(EPWM2_BASE, pwm_slave);
     CreateEPwm(EPWM3_BASE, pwm_slave);
+
+
 
    // ePWM 1의 TBPRD 기준
     EPWM_setupEPWMLinks(EPWM2_BASE, EPWM_LINK_WITH_EPWM_1, EPWM_LINK_TBPRD);  // EPwm2Regs.EPWMXLINK.bit.TBPRDLINK
     EPWM_setupEPWMLinks(EPWM3_BASE, EPWM_LINK_WITH_EPWM_1, EPWM_LINK_TBPRD);
 
-    PWM_PRI_EN_DI(PWM_ON);
+    PWM_PRI_EN_DI(PWM_OFF); // start_bit == 1이어야 풀리도록
 
     TBCLKSYNC_enable();
 }
@@ -498,13 +510,36 @@ void LLC_ApplyPattern(const LLC_Pattern *pattern, bool updateAQ)
 
 __interrupt void epwm1_isr(void)
 {
+
+    if(start_bit == 0)
+    {
+        // 1A, 1B, 2A, 2B, 3A, 3B 전부 LOW
+        ePWM_Force123_Trip();
+
+        prev_start_bit = 0;
+
+        EPWM_clearEventTriggerInterruptFlag(EPWM1_BASE);
+        Interrupt_clearACKGroup(INTERRUPT_ACK_GROUP3);
+
+        return;
+    }
+
+
+    if(prev_start_bit == 0)
+    {
+        test_count++;
+
+        ePWM_TZ123_Reset();        // Trip 해제 → PWM 출력 허용
+        patternChanged = true;        // 현재 pattern을 다시 확실하게 적용
+        prev_start_bit = 1;
+    }
+
+
+
     const LLC_Pattern *pattern = LLC_GetPattern(pattern_mode);
 
     uint16_t current_prd = EPWM_getTimeBasePeriod(EPWM1_BASE);
     uint16_t new_prd = current_prd;
-
-    bool patternChanged = false;
-    bool periodChanged = false;
 
     epwm1_isr_count++;
 
@@ -522,7 +557,9 @@ __interrupt void epwm1_isr(void)
         float temp = 1.0f / 50000.0f;
         target_fsw = PI_control_PFM(temp);
 
-        new_prd = (uint16_t)((float)TBPRD_BASE * (50000.0f / target_fsw));
+        new_prd =
+            (uint16_t)((float)TBPRD_BASE *
+                       (50000.0f / target_fsw));
 
         if(new_prd < 250U)
         {
@@ -539,6 +576,27 @@ __interrupt void epwm1_isr(void)
             EPWM_setTimeBasePeriod(EPWM1_BASE, new_prd);
         }
     }
+    else
+    {
+        new_prd =
+            (uint16_t)((float)TBPRD_BASE *
+                       (50000.0f / frequency_change));
+
+        if(new_prd < 250U)
+        {
+            new_prd = 250U;
+        }
+        else if(new_prd > 1667U)
+        {
+            new_prd = 1667U;
+        }
+
+        if(new_prd != current_prd)
+        {
+            EPWM_setTimeBasePeriod(EPWM1_BASE, new_prd);
+            periodChanged = true;
+        }
+    }
 
     if(pattern != NULL)
     {
@@ -547,14 +605,20 @@ __interrupt void epwm1_isr(void)
             LLC_ApplyAQ(pattern);
         }
 
-        if(patternChanged == true || periodChanged == true)
+        if(patternChanged == true ||
+           periodChanged == true)
         {
             LLC_UpdateCompare(pattern, new_prd);
+
+            current_frequency =
+                ((float)TBPRD_BASE *
+                 (50000.0f / new_prd));
+
+            patternChanged = false;
+            periodChanged = false;
         }
     }
 
     EPWM_clearEventTriggerInterruptFlag(EPWM1_BASE);
-    EPWM_clearEventTriggerInterruptFlag(EPWM2_BASE);
-    EPWM_clearEventTriggerInterruptFlag(EPWM3_BASE);
     Interrupt_clearACKGroup(INTERRUPT_ACK_GROUP3);
 }

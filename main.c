@@ -25,12 +25,16 @@ int main(void)
     InitGpio();
 
     /*  GTAE_EN_33      */
-//    GPIO_SetupPinMux(31, 0, 0);                             //pin GPIO31 - general in/output        //update for DSP ver.2 (�츰 ���� 1�̴ϱ� gpio8�� ����ϳ�?)
-//    GPIO_SetupPinOptions(31, GPIO_OUTPUT, GPIO_PULLUP);     //GPIO31 - OUTPUT, PULLUP active        //update for DSP ver.2
+    GPIO_SetupPinMux(31, 0, 0);                             //pin GPIO31 - general in/output        //update for DSP ver.2 (�츰 ���� 1�̴ϱ� gpio8�� ����ϳ�?)
+    GPIO_SetupPinOptions(31, GPIO_OUTPUT, GPIO_PULLUP);     //GPIO31 - OUTPUT, PULLUP active        //update for DSP ver.2
 
     /*  FAULT_CLR   */
     GPIO_SetupPinMux(14, 0, 0);                             //pin GPIO14 - general in/output        �ֳ״� PUD Ǯ�� �� ���ֳ�?
     GPIO_SetupPinOptions(14, GPIO_OUTPUT, GPIO_PULLUP);     //GPIO14 - OUTPUT, PULLUP active
+
+
+    GpioDataRegs.GPASET.bit.GPIO8=1;
+//    GpioDataRegs.GPACLEAR.bit.GPIO8=1;
 
     GPIO_SetupPinMux(8, 0, 0);                             //pin GPIO14 - general in/output        �ֳ״� PUD Ǯ�� �� ���ֳ�?
     GPIO_SetupPinOptions(8, GPIO_OUTPUT, GPIO_PULLUP);
