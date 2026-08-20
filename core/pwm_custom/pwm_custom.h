@@ -1,6 +1,12 @@
+#ifndef PWM_CUSTOM_H_
+#define PWM_CUSTOM_H_
 
 #define PWM_ON          1
 #define PWM_OFF         2
+#define LLC_PATTERN_MIN         1U
+#define LLC_PATTERN_MAX         8U
+#define LLC_PWM_COUNT           3U
+#define LLC_DEAD_COUNT          10
 
 typedef struct
 {
@@ -9,23 +15,66 @@ typedef struct
     EPWM_SignalParams   epwm_signal_params;
 } EPWM_Custom;
 
+typedef enum
+{
+    LLC_PATTERN_NONE = 0,
+    LLC_PATTERN_1A,
+    LLC_PATTERN_1B,
+    LLC_PATTERN_2,
+    LLC_PATTERN_3A,
+    LLC_PATTERN_3B,
+    LLC_PATTERN_3C,
+    LLC_PATTERN_3D,
+    LLC_PATTERN_4
+} LLC_PatternMode;
+
+typedef enum
+{
+    LLC_AQ_HIGH = 0,
+    LLC_AQ_LOW
+} LLC_AQType;
+
+typedef struct
+{
+    bool useFullPeriod;
+    int16_t offset;
+} LLC_CompareConfig;
+
+typedef struct
+{
+    LLC_AQType aqA;
+    LLC_AQType aqB;
+    LLC_CompareConfig cmpA;
+    LLC_CompareConfig cmpB;
+} LLC_EPWMPattern;
+
+typedef struct
+{
+    LLC_EPWMPattern pwm[LLC_PWM_COUNT];
+} LLC_Pattern;
+
+
+extern volatile uint16_t TBPRD_BASE;
+extern volatile uint16_t epwm1_isr_count;
+extern volatile float frequency_change;
+extern volatile bool is_PI_Control;
+extern volatile uint8_t pattern_mode;
+extern volatile uint8_t current_pattern;
+
+
 void PWM_PRI_EN_DI(int enable);
 void ePWM_Force123_Trip(void);
 void ePWM_TZ123_Reset();
 
 void pwm_init (void);
-void CreateEPwm(uint16_t, EPWM_Custom);
+void CreateEPwm(uint32_t epwm_base, EPWM_Custom epwm_signal);
 void InitEPWMGpioPin(void);
 
-void EPWM_high_low_AQ(uint16_t base, bool high_bit);
-void startLlcPattern1A(void);
-void startLlcPattern1B(void);
-void startLlcPattern2(void);
-void startLlcPattern3A(void);
-void startLlcPattern3B(void);
-void startLlcPattern3C(void);
-void startLlcPattern3D(void);
-void startLlcPattern4(void);
+const LLC_Pattern *LLC_GetPattern(uint8_t pattern);
+void LLC_ApplyPattern(const LLC_Pattern *pattern, bool updateAQ);
+void LLC_UpdateCompare(const LLC_Pattern *pattern, uint16_t period);
+
+
 
 __interrupt void epwm1_isr(void);
 
@@ -44,3 +93,5 @@ static inline void TBCLKSYNC_enable(void)
     CpuSysRegs.PCLKCR0.bit.TBCLKSYNC = 1;
     EDIS;
 }
+
+#endif

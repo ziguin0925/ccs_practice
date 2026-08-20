@@ -32,6 +32,9 @@ int main(void)
     GPIO_SetupPinMux(14, 0, 0);                             //pin GPIO14 - general in/output        �ֳ״� PUD Ǯ�� �� ���ֳ�?
     GPIO_SetupPinOptions(14, GPIO_OUTPUT, GPIO_PULLUP);     //GPIO14 - OUTPUT, PULLUP active
 
+    GPIO_SetupPinMux(8, 0, 0);                             //pin GPIO14 - general in/output        �ֳ״� PUD Ǯ�� �� ���ֳ�?
+    GPIO_SetupPinOptions(8, GPIO_OUTPUT, GPIO_PULLUP);
+
     DINT;
     InitPieCtrl();
     IER = 0x0000;               // Core Interrupts Enable Register 占십깍옙화

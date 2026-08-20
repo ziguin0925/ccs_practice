@@ -4,45 +4,252 @@
 #include "device.h"
 #include "../service/PI_control.h"
 
-volatile uint16_t TBPRD_BASE  = 1000;
-
-volatile uint16_t epwm1_isr_count = 0;
-volatile float frequency_change = 1.0;
-
-volatile float  temp_epwm1 = 1;
-volatile float  temp_epwm2 = 1;
-volatile float  temp_epwm3 = 1;
-
+volatile uint16_t TBPRD_BASE = 1000U;
+volatile uint16_t epwm1_isr_count = 0U;
+volatile float frequency_change = 1.0f;
 volatile bool is_PI_Control = false;
+volatile uint8_t pattern_mode = LLC_PATTERN_NONE;
+volatile uint8_t current_pattern = LLC_PATTERN_NONE;
 
-volatile uint8_t pattern_mode = 0;
-volatile uint8_t current_pattern = 0;
+static const uint32_t g_epwmBase[LLC_PWM_COUNT] =
+{
+    EPWM1_BASE,
+    EPWM2_BASE,
+    EPWM3_BASE
+};
 
-volatile uint16_t cmpA1;
-volatile uint16_t cmpA2;
-volatile uint16_t cmpA3;
-volatile uint16_t cmpB1;
-volatile uint16_t cmpB2;
-volatile uint16_t cmpB3;
+#define CMP_HALF_MINUS      { false, -LLC_DEAD_COUNT }
+#define CMP_HALF_PLUS       { false,  LLC_DEAD_COUNT }
+#define CMP_FULL            { true,   0 }
 
-volatile uint16_t cmp1;
-volatile uint16_t cmp2;
-volatile uint16_t cmp3;
+static const LLC_Pattern g_pattern1A =
+{
+ // HIGH 시작 dead band 줄거면  cmp에 -(minus)줘야함
+    .pwm =
+    {
+        {
+            .aqA = LLC_AQ_HIGH, //epwm1A HIGH start
+            .aqB = LLC_AQ_LOW, // epwm1B LOW start
+            .cmpA = CMP_HALF_MINUS, // dead band
+            .cmpB = CMP_FULL // full duty
+        },
+        {
+            .aqA = LLC_AQ_LOW,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_HALF_PLUS,
+            .cmpB = CMP_FULL
+        },
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_LOW,
+            .cmpA = CMP_HALF_MINUS,
+            .cmpB = CMP_FULL
+        }
+    }
+};
 
-volatile uint16_t current_prd;
+static const LLC_Pattern g_pattern1B =
+{
+    .pwm =
+    {
+        {
+            .aqA = LLC_AQ_LOW,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_FULL,
+            .cmpB = CMP_HALF_MINUS
+        },
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_LOW,
+            .cmpA = CMP_FULL,
+            .cmpB = CMP_HALF_PLUS
+        },
+        {
+            .aqA = LLC_AQ_LOW,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_FULL,
+            .cmpB = CMP_HALF_MINUS
+        }
+    }
+};
 
+static const LLC_Pattern g_pattern2 =
+{
+    .pwm =
+    {
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_LOW,
+            .cmpA = CMP_HALF_MINUS,
+            .cmpB = CMP_HALF_PLUS
+        },
+        {
+            .aqA = LLC_AQ_LOW,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_HALF_PLUS,
+            .cmpB = CMP_HALF_MINUS
+        },
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_LOW,
+            .cmpA = CMP_HALF_MINUS,
+            .cmpB = CMP_HALF_PLUS
+        }
+    }
+};
 
+static const LLC_Pattern g_pattern3A =
+{
+    .pwm =
+    {
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_LOW,
+            .cmpA = CMP_HALF_MINUS,
+            .cmpB = CMP_HALF_PLUS
+        },
+        {
+            .aqA = LLC_AQ_LOW,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_HALF_PLUS,
+            .cmpB = CMP_HALF_MINUS
+        },
+        {
+            .aqA = LLC_AQ_LOW,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_HALF_PLUS,
+            .cmpB = CMP_HALF_MINUS
+        }
+    }
+};
+
+static const LLC_Pattern g_pattern3B =
+{
+    .pwm =
+    {
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_LOW,
+            .cmpA = CMP_HALF_MINUS,
+            .cmpB = CMP_HALF_PLUS
+        },
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_LOW,
+            .cmpA = CMP_HALF_MINUS,
+            .cmpB = CMP_HALF_PLUS
+        },
+        {
+            .aqA = LLC_AQ_LOW,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_HALF_PLUS,
+            .cmpB = CMP_HALF_MINUS
+        }
+    }
+};
+
+static const LLC_Pattern g_pattern3C =
+{
+    .pwm =
+    {
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_LOW,
+            .cmpA = CMP_FULL,
+            .cmpB = CMP_HALF_PLUS
+        },
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_FULL,
+            .cmpB = CMP_FULL
+        },
+        {
+            .aqA = LLC_AQ_LOW,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_FULL,
+            .cmpB = CMP_HALF_MINUS
+        }
+    }
+};
+
+static const LLC_Pattern g_pattern3D =
+{
+    .pwm =
+    {
+        {
+            .aqA = LLC_AQ_LOW,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_HALF_PLUS,
+            .cmpB = CMP_FULL
+        },
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_FULL,
+            .cmpB = CMP_FULL
+        },
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_LOW,
+            .cmpA = CMP_HALF_MINUS,
+            .cmpB = CMP_FULL
+        }
+    }
+};
+
+static const LLC_Pattern g_pattern4 =
+{
+    .pwm =
+    {
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_LOW,
+            .cmpA = CMP_HALF_MINUS,
+            .cmpB = CMP_HALF_PLUS
+        },
+        {
+            .aqA = LLC_AQ_HIGH,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_FULL,
+            .cmpB = CMP_FULL
+        },
+        {
+            .aqA = LLC_AQ_LOW,
+            .aqB = LLC_AQ_HIGH,
+            .cmpA = CMP_HALF_PLUS,
+            .cmpB = CMP_HALF_MINUS
+        }
+    }
+};
+
+static const LLC_Pattern * const g_patternTable[] =
+{
+    NULL,
+    &g_pattern1A,
+    &g_pattern1B,
+    &g_pattern2,
+    &g_pattern3A,
+    &g_pattern3B,
+    &g_pattern3C,
+    &g_pattern3D,
+    &g_pattern4
+};
+
+static void LLC_SetAQ_A(uint32_t base, LLC_AQType type);
+static void LLC_SetAQ_B(uint32_t base, LLC_AQType type);
+static uint16_t LLC_CalcCompare(const LLC_CompareConfig *config, uint16_t period);
+static void LLC_ApplyAQ(const LLC_Pattern *pattern);
+
+volatile float target_fsw = 0;
 void pwm_init(void)
 {
     TBCLKSYNC_disable();
 
-    Interrupt_enableInCPU(M_INT3); // M_INT3 epwm 다킴
-    // Interrupt registration is handled by the project’s PIE vector table setup in this build.
-
+    Interrupt_enableInCPU(M_INT3);
     Interrupt_register(INT_EPWM1, &epwm1_isr);
     Interrupt_enable(INT_EPWM1);
 
-    // Use ePWM pin enable
     InitEPWMGpioPin();
 
     EALLOW;
@@ -55,27 +262,28 @@ void pwm_init(void)
     //PWM f = TBCLK / (2 * TBPRD)
     //50kHz = 100MHz / (2 * 1000)
     EPWM_SignalParams pwm_base_signal = {
-                .freqInHz = 50000,
-                .dutyValA = 0.5f,
-                .dutyValB = 0.5f,
-                .sysClkInHz = DEVICE_SYSCLK_FREQ,
-                .invertSignalB = false,
-                .tbCtrMode = EPWM_COUNTER_MODE_UP_DOWN,
-                .tbClkDiv = EPWM_CLOCK_DIVIDER_1,
-                .tbHSClkDiv = EPWM_HSCLOCK_DIVIDER_1
-        };
-
-    EPWM_Custom pwm_master ={
-           .epwm_signal_params = pwm_base_signal,
-           .master_bit = true,
-           .phaseShift = 0
+        .freqInHz = 50000,
+        .dutyValA = 0.5f,
+        .dutyValB = 0.5f,
+        .sysClkInHz = DEVICE_SYSCLK_FREQ,
+        .invertSignalB = false,
+        .tbCtrMode = EPWM_COUNTER_MODE_UP_DOWN,
+        .tbClkDiv = EPWM_CLOCK_DIVIDER_1,
+        .tbHSClkDiv = EPWM_HSCLOCK_DIVIDER_1
     };
 
+    EPWM_Custom pwm_master =
+    {
+        .epwm_signal_params = pwm_base_signal,
+        .master_bit = true,
+        .phaseShift = 0U
+    };
 
-    EPWM_Custom pwm_slave ={
-           .epwm_signal_params = pwm_base_signal,
-           .master_bit = false,
-           .phaseShift = 2U
+    EPWM_Custom pwm_slave =
+    {
+        .epwm_signal_params = pwm_base_signal,
+        .master_bit = false,
+        .phaseShift = 2U
     };
 
     CreateEPwm(EPWM1_BASE, pwm_master); // MASTER
@@ -91,10 +299,7 @@ void pwm_init(void)
     TBCLKSYNC_enable();
 }
 
-
-
-// AQ(Action Qualifier)로 인한 단순 반전동작 사용 x -> DeadTime 서브 모듈 사용으로 상보 동작
-void CreateEPwm(uint16_t epwm_base, EPWM_Custom epwm_signal)
+void CreateEPwm(uint32_t epwm_base, EPWM_Custom epwm_signal)
 {
 
     // 기본 파형 생성
@@ -108,7 +313,8 @@ void CreateEPwm(uint16_t epwm_base, EPWM_Custom epwm_signal)
         EPWM_disablePhaseShiftLoad(epwm_base);
         EPWM_setSyncOutPulseMode(epwm_base, EPWM_SYNC_OUT_PULSE_ON_COUNTER_ZERO);
     }
-    else{
+    else
+    {
         EPWM_enablePhaseShiftLoad(epwm_base);
         EPWM_setPhaseShift(epwm_base, epwm_signal.phaseShift);
         EPWM_setSyncOutPulseMode(epwm_base, EPWM_SYNC_OUT_PULSE_ON_EPWMxSYNCIN);
@@ -130,46 +336,17 @@ void CreateEPwm(uint16_t epwm_base, EPWM_Custom epwm_signal)
     // 트립 존 초기화
     EPWM_setTripZoneAction(epwm_base, EPWM_TZ_ACTION_EVENT_TZA, EPWM_TZ_ACTION_LOW);
     EPWM_setTripZoneAction(epwm_base, EPWM_TZ_ACTION_EVENT_TZB, EPWM_TZ_ACTION_LOW);
-
-
-
-//    // DBCTL[IN_MODE] 설정
-//    EPWM_setRisingEdgeDeadBandDelayInput(epwm_base, EPWM_DB_INPUT_EPWMA); // EPWM1A 신호를 RED 입력으로 사용
-//    EPWM_setFallingEdgeDeadBandDelayInput(epwm_base, EPWM_DB_INPUT_EPWMA); // RED 출력 후 하강 에지 입력으로 사용하여 A/B 보수 신호 생성
-//
-//    // 데드밴드 설정 DBCTL[OUT_MODE]
-//    EPWM_setDeadBandDelayMode(epwm_base, EPWM_DB_RED, true);   // DBCTL.OUT_MODE RED 설정
-//    EPWM_setDeadBandDelayMode(epwm_base, EPWM_DB_FED, true);   // DBCTL.OUT_MODE FED 설정
-//
-//
-//    // 10 (AHC) ePWMxA는 정상, ePWMxB는 A의 보수
-//    EPWM_setDeadBandDelayPolarity(epwm_base, EPWM_DB_RED, EPWM_DB_POLARITY_ACTIVE_HIGH);
-//    EPWM_setDeadBandDelayPolarity(epwm_base, EPWM_DB_FED, EPWM_DB_POLARITY_ACTIVE_LOW);
-//
-//
-//    // RED/FED 값을 설정하여 deadband 시간을 결정
-//    EPWM_setRisingEdgeDelayCount(epwm_base, 20);   // RED = 20 TBCLK
-//    EPWM_setFallingEdgeDelayCount(epwm_base, 20);  // FED = 20 TBCLK
-
 }
 
-
-void InitEPWMGpioPin(void){
-
+void InitEPWMGpioPin(void)
+{
     GPIO_setPinConfig(GPIO_0_EPWM1A);
     GPIO_setPinConfig(GPIO_1_EPWM1B);
-
-    //    GPIO_setDirectionMode(0, GPIO_DIR_MODE_OUT);
-    //    GPIO_setDirectionMode(1, GPIO_DIR_MODE_OUT);
-
     GPIO_setPinConfig(GPIO_2_EPWM2A);
     GPIO_setPinConfig(GPIO_3_EPWM2B);
-
     GPIO_setPinConfig(GPIO_4_EPWM3A);
     GPIO_setPinConfig(GPIO_5_EPWM3B);
-
 }
-
 
 void PWM_PRI_EN_DI(int enable)
 {
@@ -177,25 +354,25 @@ void PWM_PRI_EN_DI(int enable)
     {
         ePWM_TZ123_Reset();
     }
-    else if(enable == PWM_OFF)
+    else
     {
         ePWM_Force123_Trip();
     }
 }
 
-
-void ePWM_TZ123_Reset()
+void ePWM_TZ123_Reset(void)
 {
     EALLOW;
     EPwm1Regs.TZCLR.bit.OST = 1;        // Clear OST
     EPwm1Regs.TZCLR.bit.INT = 1;        // Clear INT
     EPwm2Regs.TZCLR.bit.OST = 1;
     EPwm2Regs.TZCLR.bit.INT = 1;
+
     EPwm3Regs.TZCLR.bit.OST = 1;
     EPwm3Regs.TZCLR.bit.INT = 1;
+
     EDIS;
 }
-
 
 void ePWM_Force123_Trip(void)
 {
@@ -203,550 +380,181 @@ void ePWM_Force123_Trip(void)
     EPwm1Regs.TZFRC.bit.OST = 1;        // OST 발생 -> PWM 강제 LOW
     EPwm2Regs.TZFRC.bit.OST = 1;
     EPwm3Regs.TZFRC.bit.OST = 1;
+
     EDIS;
 }
 
-uint16_t mode_count = 0;
+const LLC_Pattern *LLC_GetPattern(uint8_t pattern)
+{
+    if(pattern < LLC_PATTERN_MIN || pattern > LLC_PATTERN_MAX)
+    {
+        return NULL;
+    }
 
-// typedef __interrupt void (*PINT)(void);
+    return g_patternTable[pattern];
+}
+
+static void LLC_SetAQ_A(uint32_t base, LLC_AQType type)
+{
+    if(type == LLC_AQ_HIGH)
+    {
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+    }
+    else
+    {
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
+    }
+}
+
+static void LLC_SetAQ_B(uint32_t base, LLC_AQType type)
+{
+    if(type == LLC_AQ_HIGH)
+    {
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
+    }
+    else
+    {
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
+        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
+    }
+}
+
+static uint16_t LLC_CalcCompare(const LLC_CompareConfig *config, uint16_t period)
+{
+    int32_t value;
+
+    if(config->useFullPeriod == true) // 풀 듀티
+    {
+        return period;
+    }
+
+    value = ((int32_t)period >> 1) + (int32_t)config->offset; // (period / 2) + deadband
+
+    if(value < 0)
+    {
+        value = 0;
+    }
+
+    if(value > period)
+    {
+        value = period;
+    }
+
+    return (uint16_t)value;
+}
+
+static void LLC_ApplyAQ(const LLC_Pattern *pattern)
+{
+    uint16_t i;
+
+    for(i = 0U; i < LLC_PWM_COUNT; i++)
+    {
+        LLC_SetAQ_A(g_epwmBase[i], pattern->pwm[i].aqA);
+        LLC_SetAQ_B(g_epwmBase[i], pattern->pwm[i].aqB);
+    }
+}
+
+void LLC_UpdateCompare(const LLC_Pattern *pattern, uint16_t period)
+{
+    uint16_t i;
+    uint16_t cmpA;
+    uint16_t cmpB;
+
+    // ePWM 1,2,3
+    for(i = 0U; i < LLC_PWM_COUNT; i++)
+    {
+        cmpA = LLC_CalcCompare(&pattern->pwm[i].cmpA, period); // period : EPWM1 TBPRD
+        cmpB = LLC_CalcCompare(&pattern->pwm[i].cmpB, period);
+
+        EPWM_setCounterCompareValue(g_epwmBase[i], EPWM_COUNTER_COMPARE_A, cmpA);
+        EPWM_setCounterCompareValue(g_epwmBase[i], EPWM_COUNTER_COMPARE_B, cmpB);
+    }
+}
+
+void LLC_ApplyPattern(const LLC_Pattern *pattern, bool updateAQ)
+{
+    uint16_t currentPeriod;
+
+    if(pattern == NULL)
+    {
+        return;
+    }
+
+    if(updateAQ == true)
+    {
+        LLC_ApplyAQ(pattern);
+    }
+
+    currentPeriod = EPWM_getTimeBasePeriod(EPWM1_BASE);
+    LLC_UpdateCompare(pattern, currentPeriod);
+}
+
 __interrupt void epwm1_isr(void)
 {
+    const LLC_Pattern *pattern = LLC_GetPattern(pattern_mode);
+
+    uint16_t current_prd = EPWM_getTimeBasePeriod(EPWM1_BASE);
+    uint16_t new_prd = current_prd;
+
+    bool patternChanged = false;
+    bool periodChanged = false;
+
     epwm1_isr_count++;
-    // 패턴 변경
 
-//    TBCLKSYNC_disable();
-
-    switch(pattern_mode){
-    case 1:
-        startLlcPattern1A();
-        break;
-    case 2:
-        startLlcPattern1B();
-        break;
-    case 3:
-        startLlcPattern2();
-        break;
-    case 4:
-        startLlcPattern3A();
-        break;
-    case 5:
-        startLlcPattern3B();
-        break;
-    case 6:
-        startLlcPattern3C();
-        break;
-    case 7:
-        startLlcPattern3D();
-        break;
-    case 8:
-        startLlcPattern4();
-        break;
-    }
-//    TBCLKSYNC_enable();
-
-
-    // PI제어 on/off
-    if (is_PI_Control == true){
-        frequency_change = PI_control_PFM();
-    }
-
-
-
-    // 주파수 제어
-    if(frequency_change != temp_epwm1)
+    if(pattern != NULL)
     {
-        uint16_t new_prd = (uint16_t)(TBPRD_BASE / frequency_change);
-        uint16_t global_cmpA;
+        if(current_pattern != pattern_mode)
+        {
+            current_pattern = pattern_mode;
+            patternChanged = true;
+        }
+    }
 
-        if(current_pattern == 2U || current_pattern == 6U || current_pattern == 7U){
-            global_cmpA  = new_prd / 2 - 10U;
-        }else{
-            global_cmpA  = new_prd / 2;
+    if(is_PI_Control == true)
+    {
+        float temp = 1.0f / 50000.0f;
+        target_fsw = PI_control_PFM(temp);
+
+        new_prd = (uint16_t)((float)TBPRD_BASE * (50000.0f / target_fsw));
+
+        if(new_prd < 250U)
+        {
+            new_prd = 250U;
+        }
+        else if(new_prd > 1667U)
+        {
+            new_prd = 1667U;
         }
 
-
-//        EPWM_forceSyncPulse(EPWM1_BASE); // SWFSYNC
+        if(new_prd != current_prd)
+        {
+            periodChanged = true;
+            EPWM_setTimeBasePeriod(EPWM1_BASE, new_prd);
+        }
     }
+
+    if(pattern != NULL)
+    {
+        if(patternChanged == true)
+        {
+            LLC_ApplyAQ(pattern);
+        }
+
+        if(patternChanged == true || periodChanged == true)
+        {
+            LLC_UpdateCompare(pattern, new_prd);
+        }
+    }
+
     EPWM_clearEventTriggerInterruptFlag(EPWM1_BASE);
     EPWM_clearEventTriggerInterruptFlag(EPWM2_BASE);
     EPWM_clearEventTriggerInterruptFlag(EPWM3_BASE);
-
     Interrupt_clearACKGroup(INTERRUPT_ACK_GROUP3);
-}
-
-
-void EPWM_high_low_AQ(uint16_t base, bool high_bit)
-{
-    if(high_bit == true)
-    {
-        // 올라갈 때 COMP만나면 HIGH
-        // 내려갈 때 COMP 만나면 LOW
-        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);// Clear PWMxA on Zero
-        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);// Set PWMxA on event A, up count
-        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);// Clear PWMxA on event A, down count
-    }
-    else{
-        // 올라갈 때 COMP만나면 LOW
-        // 내려갈 때 COMP 만나면 HIGH
-        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(base, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-    }
-}
-
-
-void startLlcPattern1A(){
-    if(current_pattern != pattern_mode){
-        current_pattern = pattern_mode;
-
-        EALLOW;
-
-        EPwm1Regs.AQCTLA.all = 0U;
-        EPwm1Regs.AQCTLB.all = 0U;
-
-        EPwm2Regs.AQCTLA.all = 0U;
-        EPwm2Regs.AQCTLB.all = 0U;
-
-        EPwm3Regs.AQCTLA.all = 0U;
-        EPwm3Regs.AQCTLB.all = 0U;
-
-        EDIS;
-
-        //epwm1
-        // A 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-        // B 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-
-        //epwm2
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-        //epwm3
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-    }
-    /*
-     * Up-Down count 기준 50% 위치 듀티로 dead band 조절
-     */
-
-    current_prd = EPWM_getTimeBasePeriod(EPWM1_BASE);
-
-    cmpA1 = current_prd / 2U - 10U;
-    cmpA2 = current_prd / 2U + 10U;
-    cmpA3 = current_prd / 2U - 10U;
-
-    cmpB1 = current_prd; // LOW
-    cmpB2 = current_prd; // HIGH
-    cmpB3 = current_prd; // LOW
-
-
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmpA1);
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_B, cmpB1);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmpA2);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_B, cmpB2);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmpA3);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_B, cmpB3);
-
-}
-
-void startLlcPattern1B(){
-    if(current_pattern != pattern_mode){
-        current_pattern = pattern_mode;
-        //epwm1
-        // A 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-        // B 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-
-        //epwm2
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-        //epwm3
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-    }
-    /*
-     * Up-Down count 기준 50% 위치 듀티로 dead band 200ns 조절
-     */
-    current_prd = EPWM_getTimeBasePeriod(EPWM1_BASE);
-
-    cmpA1 = current_prd;// LOW
-    cmpA2 = current_prd;// HIGH
-    cmpA3 = current_prd;// LOW
-
-    cmpB1 = current_prd / 2U - 10U; // - 100ns
-    cmpB2 = current_prd / 2U + 10U; // - 100ns
-    cmpB3 = current_prd / 2U - 10U;
-
-
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmpA1);
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_B, cmpB1);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmpA2);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_B, cmpB2);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmpA3);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_B, cmpB3);
-
-}
-
-void startLlcPattern2(){
-    if(current_pattern != pattern_mode){
-        current_pattern = pattern_mode;
-        //epwm1
-        // A 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-        // B 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-
-        //epwm2
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-        //epwm3
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-    }
-    /*
-     * Up-Down count 기준 50% 위치 듀티로 dead band 200ns 조절
-     */
-    current_prd = EPWM_getTimeBasePeriod(EPWM1_BASE);
-
-    cmpA1 = current_prd / 2U - 10U;
-    cmpA2 = current_prd / 2U + 10U;
-    cmpA3 = current_prd / 2U - 10U;
-
-    cmpB1 = current_prd / 2U + 10U; // - 100ns
-    cmpB2 = current_prd / 2U - 10U; // - 100ns
-    cmpB3 = current_prd / 2U + 10U;
-
-
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmpA1);
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_B, cmpB1);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmpA2);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_B, cmpB2);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmpA3);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_B, cmpB3);
-
-}
-
-void startLlcPattern3A(){
-    if(current_pattern != pattern_mode){
-        current_pattern = pattern_mode;
-        //epwm1
-        // A 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-        // B 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-
-        //epwm2
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-        //epwm3
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-    }
-    /*
-     * Up-Down count 기준 50% 위치 듀티로 dead band 200ns 조절
-     */
-    current_prd = EPWM_getTimeBasePeriod(EPWM1_BASE);
-
-    cmpA1 = current_prd / 2U - 10U;
-    cmpA2 = current_prd / 2U + 10U;
-    cmpA3 = current_prd / 2U + 10U;
-
-    cmpB1 = current_prd / 2U + 10U;
-    cmpB2 = current_prd / 2U - 10U;
-    cmpB3 = current_prd / 2U - 10U;
-
-
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmpA1);
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_B, cmpB1);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmpA2);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_B, cmpB2);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmpA3);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_B, cmpB3);
-
-}
-
-void startLlcPattern3B(){
-    if(current_pattern != pattern_mode){
-        current_pattern = pattern_mode;
-        //epwm1
-        // A 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-        // B 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-
-        //epwm2
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-        //epwm3
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-    }
-    /*
-     * Up-Down count 기준 50% 위치 듀티로 dead band 200ns 조절
-     */
-    current_prd = EPWM_getTimeBasePeriod(EPWM1_BASE);
-
-    cmpA1 = current_prd / 2U - 10U;
-    cmpA2 = current_prd / 2U - 10U;
-    cmpA3 = current_prd / 2U + 10U;
-
-    cmpB1 = current_prd / 2U + 10U;
-    cmpB2 = current_prd / 2U + 10U;
-    cmpB3 = current_prd / 2U - 10U;
-
-
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmpA1);
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_B, cmpB1);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmpA2);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_B, cmpB2);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmpA3);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_B, cmpB3);
-
-}
-
-void startLlcPattern3C(){
-    if(current_pattern != pattern_mode){
-        current_pattern = pattern_mode;
-        //epwm1
-        // A 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-        // B 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-
-        //epwm2
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-        //epwm3
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-    }
-    /*
-     * Up-Down count 기준 50% 위치 듀티로 dead band 200ns 조절
-     */
-    current_prd = EPWM_getTimeBasePeriod(EPWM1_BASE);
-
-    cmpA1 = current_prd; // HIGH
-    cmpA2 = current_prd; // HIGH
-    cmpA3 = current_prd; // LOW
-
-    cmpB1 = current_prd / 2U + 10U;
-    cmpB2 = current_prd; // HIGH
-    cmpB3 = current_prd / 2U - 10U;
-
-
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmpA1);
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_B, cmpB1);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmpA2);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_B, cmpB2);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmpA3);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_B, cmpB3);
-
-}
-
-void startLlcPattern3D(){
-    if(current_pattern != pattern_mode){
-        current_pattern = pattern_mode;
-        //epwm1
-        // A 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-        // B 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-
-        //epwm2
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-        //epwm3
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-    }
-    /*
-     * Up-Down count 기준 50% 위치 듀티로 dead band 200ns 조절
-     */
-    current_prd = EPWM_getTimeBasePeriod(EPWM1_BASE);
-
-    cmpA1 = current_prd/ 2U + 10U;
-    cmpA2 = current_prd; // HIGH
-    cmpA3 = current_prd/ 2U - 10U;
-
-    cmpB1 = current_prd; // HIGH
-    cmpB2 = current_prd; // HIGH
-    cmpB3 = current_prd; // LOW
-
-
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmpA1);
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_B, cmpB1);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmpA2);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_B, cmpB2);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmpA3);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_B, cmpB3);
-
-}
-
-void startLlcPattern4(){
-    if(current_pattern != pattern_mode){
-        current_pattern = pattern_mode;
-        //epwm1
-        // A 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-        // B 채널
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM1_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-
-        //epwm2
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM2_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-
-        //epwm3
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPA);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_A, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPA);
-
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_ZERO);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_LOW, EPWM_AQ_OUTPUT_ON_TIMEBASE_UP_CMPB);
-        EPWM_setActionQualifierAction(EPWM3_BASE, EPWM_AQ_OUTPUT_B, EPWM_AQ_OUTPUT_HIGH, EPWM_AQ_OUTPUT_ON_TIMEBASE_DOWN_CMPB);
-    }
-    /*
-     * Up-Down count 기준 50% 위치 듀티로 dead band 200ns 조절
-     */
-    current_prd = EPWM_getTimeBasePeriod(EPWM1_BASE);
-
-    cmpA1 = current_prd/ 2U - 10U;
-    cmpA2 = current_prd; // HIGH
-    cmpA3 = current_prd/ 2U + 10U;
-
-    cmpB1 = current_prd/ 2U + 10U;
-    cmpB2 = current_prd; // HIGH
-    cmpB3 = current_prd / 2U - 10U;
-
-
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, cmpA1);
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_B, cmpB1);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, cmpA2);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_B, cmpB2);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A, cmpA3);
-    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_B, cmpB3);
-
 }
