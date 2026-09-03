@@ -7,6 +7,8 @@
 #define LLC_PATTERN_MAX         8U
 #define LLC_PWM_COUNT           3U
 #define LLC_DEAD_COUNT          15
+#define MIN_PRD         250U
+#define MAX_PRD         1667U
 
 typedef struct
 {
@@ -70,7 +72,7 @@ void pwm_init (void);
 void CreateEPwm(uint32_t epwm_base, EPWM_Custom epwm_signal);
 void InitEPWMGpioPin(void);
 
-const LLC_Pattern *LLC_GetPattern(uint8_t pattern);
+const LLC_Pattern *LLC_GetPattern(LLC_PatternMode pattern);
 void LLC_ApplyPattern(const LLC_Pattern *pattern, bool updateAQ);
 void LLC_UpdateCompare(const LLC_Pattern *pattern, uint16_t period);
 
