@@ -4,22 +4,7 @@
 #include "device.h"
 #include "../service/PI_control.h"
 
-volatile uint16_t test_count = 0;
-
-volatile uint16_t TBPRD_BASE = 1000U;
-volatile uint16_t epwm1_isr_count = 0U;
-volatile float frequency_change = 50000;
-volatile float current_frequency = 0.0f;
-volatile bool is_PI_Control = false;
-volatile uint8_t pattern_mode = LLC_PATTERN_1A;
-volatile uint8_t current_pattern = LLC_PATTERN_1A;
 volatile uint8_t only_one_time_on = 0;
-volatile uint8_t start_bit = 0;
-volatile static uint8_t prev_start_bit = 0;
-
-volatile bool patternChanged = false;
-volatile bool periodChanged = false;
-
 
 static const uint32_t g_epwmBase[LLC_PWM_COUNT] =
 {
@@ -249,9 +234,7 @@ static const LLC_Pattern * const g_patternTable[] =
 static void LLC_SetAQ_A(uint32_t base, LLC_AQType type);
 static void LLC_SetAQ_B(uint32_t base, LLC_AQType type);
 static uint16_t LLC_CalcCompare(const LLC_CompareConfig *config, uint16_t period);
-static void LLC_ApplyAQ(const LLC_Pattern *pattern);
-
-volatile float target_fsw = 0;
+//static void LLC_ApplyAQ(const LLC_Pattern *pattern);
 
 void pwm_init(void)
 {
@@ -260,6 +243,8 @@ void pwm_init(void)
     Interrupt_enableInCPU(M_INT3);
     Interrupt_register(INT_EPWM1, &epwm1_isr); // 인터럽트 등록
     Interrupt_enable(INT_EPWM1);
+    Interrupt_register(INT_EPWM4, &epwm4_isr); // 인터럽트 등록
+    Interrupt_enable(INT_EPWM4);
 
     InitEPWMGpioPin();
 
@@ -267,13 +252,14 @@ void pwm_init(void)
     CpuSysRegs.PCLKCR2.bit.EPWM1 = 1;
     CpuSysRegs.PCLKCR2.bit.EPWM2 = 1;
     CpuSysRegs.PCLKCR2.bit.EPWM3 = 1;
+    CpuSysRegs.PCLKCR2.bit.EPWM4 = 1;
     EDIS;
 
     // default ePWM struct initialization
     //PWM f = TBCLK / (2 * TBPRD)
     //50kHz = 100MHz / (2 * 1000)
     EPWM_SignalParams pwm_base_signal = {
-        .freqInHz = 50000,
+        .freqInHz = 100000,
         .dutyValA = 0.5f,
         .dutyValB = 0.5f,
         .sysClkInHz = DEVICE_SYSCLK_FREQ,
@@ -282,6 +268,18 @@ void pwm_init(void)
         .tbClkDiv = EPWM_CLOCK_DIVIDER_1,
         .tbHSClkDiv = EPWM_HSCLOCK_DIVIDER_1
     };
+
+    EPWM_SignalParams adc_base_signal = {
+        .freqInHz = 10000,
+        .dutyValA = 0.5f,
+        .dutyValB = 0.5f,
+        .sysClkInHz = DEVICE_SYSCLK_FREQ,
+        .invertSignalB = false,
+        .tbCtrMode = EPWM_COUNTER_MODE_UP_DOWN,
+        .tbClkDiv = EPWM_CLOCK_DIVIDER_1,
+        .tbHSClkDiv = EPWM_HSCLOCK_DIVIDER_1
+    };
+
 
     EPWM_Custom pwm_master =
     {
@@ -297,11 +295,26 @@ void pwm_init(void)
         .phaseShift = 2U
     };
 
+    EPWM_Custom adc_master =
+    {
+        .epwm_signal_params = adc_base_signal,
+        .master_bit = false,
+        .phaseShift = 0U
+    };
+
 
     CreateEPwm(EPWM1_BASE, pwm_master); // MASTER
     CreateEPwm(EPWM2_BASE, pwm_slave);
     CreateEPwm(EPWM3_BASE, pwm_slave);
+    CreateEPwm(EPWM4_BASE, adc_master);
 
+    //EPWM 이벤트 트리거 설정
+    // EPwm1Regs.ETSEL.bit.SOCASEL = ET_CTR_PERIOD;
+    EPWM_setADCTriggerSource(EPWM1_BASE, EPWM_SOC_A, EPWM_SOC_TBCTR_PERIOD);
+    // EPwm1Regs.ETPS.bit.SOCAPRD = ET_1ST;
+    EPWM_setADCTriggerEventPrescale(EPWM1_BASE, EPWM_SOC_A, 1);
+    // EPwm1Regs.ETSEL.bit.SOCAEN = 1;
+    EPWM_enableADCTrigger(EPWM1_BASE, EPWM_SOC_A);
 
 
    // ePWM 1의 TBPRD 기준 (EPWMXLINK기능)
@@ -362,6 +375,8 @@ void InitEPWMGpioPin(void)
     GPIO_setPinConfig(GPIO_3_EPWM2B);
     GPIO_setPinConfig(GPIO_4_EPWM3A);
     GPIO_setPinConfig(GPIO_5_EPWM3B);
+    GPIO_setPinConfig(GPIO_6_EPWM4A);
+
 }
 
 void PWM_PRI_EN_DI(int enable)
@@ -387,6 +402,10 @@ void ePWM_TZ123_Reset(void)
     EPwm3Regs.TZCLR.bit.OST = 1;
     EPwm3Regs.TZCLR.bit.INT = 1;
 
+    EPwm4Regs.TZCLR.bit.OST = 1;
+    EPwm4Regs.TZCLR.bit.INT = 1;
+
+
     EDIS;
 }
 
@@ -396,6 +415,8 @@ void ePWM_Force123_Trip(void)
     EPwm1Regs.TZFRC.bit.OST = 1;        // OST 발생 -> PWM 강제 LOW
     EPwm2Regs.TZFRC.bit.OST = 1;
     EPwm3Regs.TZFRC.bit.OST = 1;
+    EPwm4Regs.TZFRC.bit.OST = 1;
+
 
     EDIS;
 }
@@ -467,7 +488,7 @@ static uint16_t LLC_CalcCompare(const LLC_CompareConfig *config, uint16_t period
     return (uint16_t)value;
 }
 
-static void LLC_ApplyAQ(const LLC_Pattern *pattern)
+void LLC_ApplyAQ(const LLC_Pattern *pattern)
 {
     uint16_t i;
 
@@ -517,123 +538,4 @@ void LLC_ApplyPattern(const LLC_Pattern *pattern, bool updateAQ)
 
     currentPeriod = EPWM_getTimeBasePeriod(EPWM1_BASE);
     LLC_UpdateCompare(pattern, currentPeriod);
-}
-
-__interrupt void epwm1_isr(void)
-{
-
-    if(start_bit == 0)
-    {
-        // 1A, 1B, 2A, 2B, 3A, 3B 전부 LOW
-        ePWM_Force123_Trip();
-
-        prev_start_bit = 0; // prev_start_bit 일단 설정.
-
-        EPWM_clearEventTriggerInterruptFlag(EPWM1_BASE);
-        Interrupt_clearACKGroup(INTERRUPT_ACK_GROUP3);
-
-        return;
-    }
-
-
-    if(prev_start_bit == 0)
-    {
-        test_count++;
-
-        ePWM_TZ123_Reset();        // Trip 해제 → PWM 출력 허용
-        patternChanged = true;        // 현재 설정되어있는 pattern을 다시 확실하게 적용
-        prev_start_bit = 1;
-    }
-
-
-    // 현재 패턴이 유효한 패턴인지 확인(패턴 변경 방지 constant)
-    const LLC_Pattern *pattern = LLC_GetPattern(pattern_mode);
-
-    uint16_t current_prd = EPWM_getTimeBasePeriod(EPWM1_BASE);
-    uint16_t new_prd = current_prd;
-
-    epwm1_isr_count++;
-
-    // 패턴 변화 확인 및 패턴 변경 비트 활성화.
-    if(pattern != NULL)
-    {
-        if(current_pattern != pattern_mode)
-        {
-            current_pattern = pattern_mode;
-            patternChanged = true;
-        }
-    }
-
-    // PI 제어 비트
-    if(is_PI_Control == true)
-    {
-        float temp = 1.0f / 50000.0f;
-        target_fsw = PI_control_PFM(temp);
-
-        new_prd = (uint16_t)((float)TBPRD_BASE * (50000.0f / target_fsw));
-
-        if(new_prd < MIN_PRD)
-        {
-            new_prd = MIN_PRD;
-        }
-        else if(new_prd > MAX_PRD)
-        {
-            new_prd = MAX_PRD;
-        }
-
-        if(new_prd != current_prd)
-        {
-            periodChanged = true;
-            EPWM_setTimeBasePeriod(EPWM1_BASE, new_prd);
-        }
-    }
-    else // 수동 주기 변경 제어 (frequency_change = 수기 입력)
-    {
-        new_prd = (uint16_t)((float)TBPRD_BASE * (50000.0f / frequency_change));
-
-        if(new_prd < MIN_PRD)
-        {
-            new_prd = MIN_PRD;
-        }
-        else if(new_prd > MAX_PRD)
-        {
-            new_prd = MAX_PRD;
-        }
-
-        if(new_prd != current_prd)
-        {
-            EPWM_setTimeBasePeriod(EPWM1_BASE, new_prd); // epwm1 주기 설정 (epwm2,3은 XLINK연결)
-            periodChanged = true; // 주기 변경 비트 활성화
-        }
-    }
-
-    if(pattern != NULL)
-    {
-        if(patternChanged == true) // 패턴 변경 시
-        {
-            // 패턴만 변경
-            LLC_ApplyAQ(pattern);
-        }
-
-        /*
-         * TODO : 현재 patternChanged가 중복으로 설정되어야함.
-         *   패턴 변경 될 경우 - 패턴만 변경될 경우 주기의 데드밴드가 Duty로 설정되고 있는 것이 문제점
-         *   주기만 변경될 경우 패턴 변경의 로직은 피하고 싶음.
-         * */
-
-        if(patternChanged == true || periodChanged == true) // 패턴 또는 주기 둘 다 변경 시.
-        {
-            // CMPA, B적용
-            LLC_UpdateCompare(pattern, new_prd);
-
-            // 코드상 frequency 적용 확인용
-            current_frequency = ((float)TBPRD_BASE * (50000.0f / new_prd));
-
-            patternChanged = false;
-            periodChanged = false;
-        }
-    }
-
-    EPWM_clearEventTriggerInterruptFlag(EPWM1_BASE);
-    Interrupt_clearACKGroup(INTERRUPT_ACK_GROUP3);
 }

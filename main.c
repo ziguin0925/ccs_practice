@@ -8,6 +8,10 @@
 #include "./core/pwm_custom/pwm_custom.h"
 #include "gpio.h"
 #include "./core/adc_custom/adc_custom.h"
+#include "./core/service/LPF.h"
+#include "./core/service/MAF.h"
+#include "./core/service/DAC.h"
+#include "./core/service/PI_control.h"
 
 
 int fortesta = 0;
@@ -18,6 +22,8 @@ Uint16 adcValue;
 
 float Vout  = 0;
 uint16_t adcResult;
+
+int pcsl = 0;
 
 int main(void)
 {
@@ -33,11 +39,11 @@ int main(void)
     GPIO_SetupPinOptions(14, GPIO_OUTPUT, GPIO_PULLUP);     //GPIO14 - OUTPUT, PULLUP active
 
 
-    GpioDataRegs.GPASET.bit.GPIO8=1;
-//    GpioDataRegs.GPACLEAR.bit.GPIO8=1;
-
     GPIO_SetupPinMux(8, 0, 0);                             //pin GPIO14 - general in/output        �ֳ״� PUD Ǯ�� �� ���ֳ�?
     GPIO_SetupPinOptions(8, GPIO_OUTPUT, GPIO_PULLUP);
+
+    GpioDataRegs.GPASET.bit.GPIO8=1;
+//    GpioDataRegs.GPACLEAR.bit.GPIO8=1;
 
     DINT;
     InitPieCtrl();
@@ -49,7 +55,14 @@ int main(void)
     pwm_init();
     Init_Adc_Setup();
 
+    LPF_Init();
+    LPF_Reset();
 
+    init_MAF();
+
+    InitDac();
+
+    PI_Init();
 
     // end init ePWM
     easyDSP_SCI_Init();
@@ -61,7 +74,9 @@ int main(void)
     while(1)
     {
         Loopcnt++;
-        adcResult = ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER0);
-        Vout = ((float)adcResult * 3.0f) / 4095.0f;
+
+//        DAC_Out(0, 2048 + (Vref*1024*0.25));
+//        DAC_Out(1, 2048 + (fsw_cmd*1024*0.000008));
+
     };
 }

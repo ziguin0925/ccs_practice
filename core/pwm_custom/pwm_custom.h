@@ -7,8 +7,8 @@
 #define LLC_PATTERN_MAX         8U
 #define LLC_PWM_COUNT           3U
 #define LLC_DEAD_COUNT          15
-#define MIN_PRD         250U
-#define MAX_PRD         1667U
+#define MIN_PRD         380U // 약 131.5kHz //350U // 약 142.8kHz
+#define MAX_PRD         550U // 약 90.9kHz
 
 typedef struct
 {
@@ -62,6 +62,7 @@ extern volatile float frequency_change;
 extern volatile bool is_PI_Control;
 extern volatile uint8_t pattern_mode;
 extern volatile uint8_t current_pattern;
+extern void LLC_ApplyAQ(const LLC_Pattern *pattern);
 
 
 void PWM_PRI_EN_DI(int enable);
@@ -79,6 +80,8 @@ void LLC_UpdateCompare(const LLC_Pattern *pattern, uint16_t period);
 
 
 __interrupt void epwm1_isr(void);
+__interrupt void epwm4_isr(void);
+
 
 
 
